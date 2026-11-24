@@ -1,8 +1,8 @@
 //! [`SceneView`]: the 3-D draw list ([`Scene3D`]) seen through an orbit camera and painted with
-//! egui's painter (no GPU needed): the board, stones as shaded boxes, the focus path, the skeleton, wrist rings.
+//! egui's painter (no GPU needed): the board, extruded stone outlines, the focus path, the skeleton, wrist rings.
 
-use egui::{Color32, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
-use pdigger_factory_sdk::models::{DrawStone3D, Scene3D};
+use egui::{Color32, Mesh, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
+use pdigger_factory_sdk::models::{DrawStone3D, Scene3D, StoneFamily};
 use serde_json::Value;
 
 use crate::draw::{color, hand_color, topology};
@@ -56,15 +56,43 @@ pub(crate) fn quat(q: &[f64]) -> [f32; 4] {
     }
 }
 
-/// The eight corners of a stone's box, in scene units (bit 0 of the index is the stone's own +x, bit 1 its +y, bit 2
-/// its +z); `None` without a position and dimensions of three numbers each.
-pub(crate) fn box_corners(stone: &DrawStone3D) -> Option<[V3; 8]> {
-    let (pos, dims) = (v3(&stone.pos)?, v3(&stone.dims)?);
-    let (q, half) = (quat(&stone.q), scale(dims, 0.5));
-    Some(std::array::from_fn(|i| {
-        let sign = |bit: usize| if i & bit == 0 { -1.0 } else { 1.0 };
-        add(pos, rotate(q, [half[0] * sign(1), half[1] * sign(2), half[2] * sign(4)]))
-    }))
+/// The two rings of the stone's footprint in scene coordinates, in matching vertex order.
+pub(crate) struct StonePrism {
+    bottom: Vec<V3>,
+    pub(crate) top: Vec<V3>,
+}
+
+impl StonePrism {
+    pub(crate) fn new(stone: &DrawStone3D) -> Option<Self> {
+        let pos = v3(&stone.pos)?;
+        let [length, width, height] = v3(&stone.dims)?;
+        let q = quat(&stone.q);
+        let half_height = rotate(q, [0.0, 0.0, height * 0.5]);
+        // (x along the length, half-width) in the unit footprint. The dogbone's straight ends
+        // span 19.5% of its length, its shoulders 10.5%, and each notch cuts in 13.5% of its width.
+        let sections: &[(f32, f32)] = match stone.family {
+            StoneFamily::Dogbone => {
+                &[(-0.5, 0.5), (-0.305, 0.5), (-0.2, 0.365), (0.2, 0.365), (0.305, 0.5), (0.5, 0.5)]
+            }
+            _ => &[(-0.5, 0.5), (0.5, 0.5)],
+        };
+        let outline = sections.iter().map(|&(x, y)| (x, -y)).chain(sections.iter().rev().copied());
+        let (bottom, top) = outline
+            .map(|(x, y)| {
+                let point = add(pos, rotate(q, [x * length, y * width, 0.0]));
+                (sub(point, half_height), add(point, half_height))
+            })
+            .unzip();
+        Some(Self { bottom, top })
+    }
+
+    pub(crate) fn vertices(self) -> impl Iterator<Item = V3> {
+        self.bottom.into_iter().chain(self.top)
+    }
+
+    pub(crate) fn top_centre(&self) -> V3 {
+        scale(add(self.top[0], self.top[self.top.len() / 2]), 0.5)
+    }
 }
 
 /// An orbit camera around a target point, scene axes (z up).
@@ -170,12 +198,57 @@ pub struct SceneView<'a> {
 /// The colours given to [`SceneView::tint`].
 type Tint<'a> = &'a dyn Fn(&DrawStone3D) -> Option<Color32>;
 
-/// One shaded face of a stone box, for back-to-front painting.
+/// One shaded face of a stone, for back-to-front painting.
 struct Face {
     depth: f32,
-    points: Vec<Pos2>,
-    fill: Color32,
-    stroke: Stroke,
+    shape: Shape,
+}
+
+impl Face {
+    fn project(
+        vertices: [V3; 4],
+        edges: [bool; 4],
+        camera: &OrbitCamera,
+        rect: Rect,
+        base: Color32,
+        stroke: Stroke,
+    ) -> Option<Self> {
+        let [a, b, _, d] = vertices;
+        let normal = normalize(cross(sub(b, a), sub(d, a)));
+        if dot(normal, sub(camera.eye(), a)) <= 0.0 {
+            return None;
+        }
+        let [a, b, c, d] = vertices.map(|v| camera.project(v, rect));
+        let projected = [a?, b?, c?, d?];
+        let points = projected.map(|(p, _)| p);
+        let depth = projected.iter().map(|(_, z)| z).sum::<f32>() * 0.25;
+        let shade = 0.55 + 0.45 * dot(normal, normalize([0.3, -0.5, 1.0])).abs();
+        let fill = Color32::from_rgba_premultiplied(
+            (f32::from(base.r()) * shade) as u8,
+            (f32::from(base.g()) * shade) as u8,
+            (f32::from(base.b()) * shade) as u8,
+            base.a(),
+        );
+        let shape = if edges == [true; 4] {
+            Shape::convex_polygon(blunt(&points)?, fill, stroke)
+        } else {
+            // Adjacent cap strips share their fill edge. Stroke only edges on the stone's perimeter.
+            let mut mesh = Mesh::default();
+            for p in points {
+                mesh.colored_vertex(p, fill);
+            }
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            let mut shapes = vec![Shape::mesh(mesh)];
+            for (i, outer) in edges.into_iter().enumerate() {
+                if outer {
+                    shapes.push(Shape::line_segment([points[i], points[(i + 1) % 4]], stroke));
+                }
+            }
+            Shape::Vec(shapes)
+        };
+        Some(Self { depth, shape })
+    }
 }
 
 impl<'a> SceneView<'a> {
@@ -256,7 +329,7 @@ impl<'a> SceneView<'a> {
         }
         faces.sort_by(|a, b| b.depth.total_cmp(&a.depth));
         for face in faces {
-            painter.add(Shape::convex_polygon(face.points, face.fill, face.stroke));
+            painter.add(face.shape);
         }
         // The focused stone's path (`focus.path3d`), as the TypeScript `SceneView` draws a frame's: points without
         // three numbers are left out, and the line breaks at a point behind the camera.
@@ -289,9 +362,7 @@ impl<'a> SceneView<'a> {
     }
 
     fn stone_faces(&self, stone: &DrawStone3D, rect: Rect, out: &mut Vec<Face>) {
-        let cam = *self.camera;
-        let Some(corners) = box_corners(stone) else { return };
-        let q = quat(&stone.q);
+        let Some(StonePrism { mut bottom, top }) = StonePrism::new(stone) else { return };
         let lit = stone.id.is_some() && stone.id == self.highlight;
         let base = match self.tint.and_then(|tint| tint(stone)) {
             Some(tinted) => tinted,
@@ -301,36 +372,21 @@ impl<'a> SceneView<'a> {
             }
             .gamma_multiply(stone.alpha.clamp(0.1, 1.0) as f32),
         };
-        let light = normalize([0.3, -0.5, 1.0]);
-        // The six faces (corner indices, counter-clockwise from outside) and their normals.
-        let faces: [([usize; 4], V3); 6] = [
-            ([0, 2, 3, 1], [0.0, 0.0, -1.0]),
-            ([4, 5, 7, 6], [0.0, 0.0, 1.0]),
-            ([0, 1, 5, 4], [0.0, -1.0, 0.0]),
-            ([2, 6, 7, 3], [0.0, 1.0, 0.0]),
-            ([0, 4, 6, 2], [-1.0, 0.0, 0.0]),
-            ([1, 3, 7, 5], [1.0, 0.0, 0.0]),
-        ];
-        for (index, normal) in faces {
-            let n = rotate(q, normal);
-            let centre = scale(index.iter().fold([0.0; 3], |acc, &i| add(acc, corners[i])), 0.25);
-            if dot(n, sub(cam.eye(), centre)) <= 0.0 {
-                continue;
+        let stroke =
+            if lit { Stroke::new(2.0, Color32::WHITE) } else { Stroke::new(1.0, Color32::from_black_alpha(90)) };
+        let mut face = |vertices, edges| out.extend(Face::project(vertices, edges, self.camera, rect, base, stroke));
+        for i in 0..top.len() {
+            let j = (i + 1) % top.len();
+            face([bottom[i], bottom[j], top[j], top[i]], [true; 4]);
+        }
+        bottom.reverse(); // outward winding for the underside
+        for ring in [&top, &bottom] {
+            // Sort each section at its own depth so recessed walls disappear behind the nearer end of a dogbone.
+            let sections = ring.len() / 2 - 1;
+            for i in 0..sections {
+                let j = ring.len() - 1 - i;
+                face([ring[i], ring[i + 1], ring[j - 1], ring[j]], [true, i + 1 == sections, true, i == 0]);
             }
-            let projected: Option<Vec<(Pos2, f32)>> = index.iter().map(|&i| cam.project(corners[i], rect)).collect();
-            let Some(projected) = projected else { continue };
-            let Some(points) = blunt(&projected.iter().map(|p| p.0).collect::<Vec<_>>()) else { continue };
-            let depth = projected.iter().map(|p| p.1).sum::<f32>() / 4.0;
-            let shade = 0.55 + 0.45 * dot(n, light).abs();
-            let fill = Color32::from_rgba_premultiplied(
-                (f32::from(base.r()) * shade) as u8,
-                (f32::from(base.g()) * shade) as u8,
-                (f32::from(base.b()) * shade) as u8,
-                base.a(),
-            );
-            let stroke =
-                if lit { Stroke::new(2.0, Color32::WHITE) } else { Stroke::new(1.0, Color32::from_black_alpha(90)) };
-            out.push(Face { depth, points, fill, stroke });
         }
     }
 
@@ -406,6 +462,34 @@ pub fn screen_point(camera: &OrbitCamera, p: V3, rect: Rect) -> Option<Pos2> {
 mod tests {
     use super::*;
     use egui::{pos2, vec2};
+
+    #[test]
+    fn both_rings_of_an_aug28_dogbone_match_its_video_outline() {
+        let recording = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/recordings/aug28-1276-1284-full.ndjson.gz");
+        let frame = pdigger_factory_sdk::Replay::open(recording).unwrap().frames().next().unwrap().unwrap();
+        let overlay = crate::draw::overlay_of_frame(&frame).unwrap();
+        let scene = crate::draw::scene_of_frame(&frame).unwrap();
+        let outline = &overlay.stones.iter().find(|s| s.id == Some(2637)).unwrap().outline;
+        let stone = scene.stones.iter().find(|s| s.id == Some(2637)).unwrap();
+        let prism = StonePrism::new(stone).unwrap();
+
+        // The two end corners and the opposite corner give the image axes of this flat, rotated stone.
+        let pixel = |i: usize| pos2(outline[i][0] as f32, outline[i][1] as f32);
+        let (origin, along, across) = (pixel(0), pixel(5) - pixel(0), pixel(11) - pixel(0));
+        let [x, y, z, w] = quat(&stone.q);
+        let centre = v3(&stone.pos).unwrap();
+        let [length, width, height] = v3(&stone.dims).unwrap();
+        for (ring, face_z) in [(prism.top, height / 2.0), (prism.bottom, -height / 2.0)] {
+            assert_eq!(ring.len(), outline.len());
+            for (i, vertex) in ring.into_iter().enumerate() {
+                let local = rotate([-x, -y, -z, w], sub(vertex, centre));
+                let at = origin + along * (0.5 + local[0] / length) + across * (0.5 + local[1] / width);
+                assert!((at - pixel(i)).length() < 0.02, "outline vertex {i}: {at:?} vs {:?}", pixel(i));
+                assert!((local[2] - face_z).abs() < 1e-5);
+            }
+        }
+    }
 
     #[test]
     fn the_camera_projects_orbits_and_zooms() {

@@ -1,12 +1,20 @@
-# Live cameras: one source at a time
+# Watch a live camera
 
-A unit shows one source at a time, to everybody: a recording it plays, or a live camera of a plant rig. How many of
-each it offers depends on the distribution of the unit (a unit can list several recordings and several cameras, or
-only one of them), but there is always exactly one selected, on the one shared session that the unit's page, the
-operators' screens and every SDK client follow. Selecting a camera changes what every viewer sees.
+<a id="live-cameras-one-source-at-a-time"></a>
 
-[examples/live_camera.rs](../../crates/pdigger-factory-sdk/examples/live_camera.rs) watches a camera, waits out its
-warm-up, shows its newest picture and follows its events:
+List the available sources, select a camera and wait for its first live frame. The unit has one shared session.
+Selecting a camera changes what operators and other SDK clients see, so use a test unit or the
+[fake camera](../testing.md) while learning.
+
+From the repository root, run the
+[examples/live_camera.rs](../../crates/pdigger-factory-sdk/examples/live_camera.rs) program.
+
+```sh
+cargo run --example live_camera -- http://factory-orin.local:8120
+```
+
+<details>
+<summary>Show the complete Rust example</summary>
 
 <!-- example: crates/pdigger-factory-sdk/examples/live_camera.rs -->
 ```rust
@@ -65,6 +73,8 @@ async fn main() -> pdigger_factory_sdk::Result<()> {
     Ok(())
 }
 ```
+
+</details>
 
 ## The sources
 

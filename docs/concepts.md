@@ -1,7 +1,8 @@
 # Concepts
 
-What the unit does, in the words the SDK uses. The measurements behind the numbers here are in
-[BEHAVIOUR-20.20.md](BEHAVIOUR-20.20.md).
+A factory unit follows one camera or recording at a time. Its **world** is the tracker’s current view of the stones,
+hands and events. Use this guide to interpret frames, coordinate systems and changes to the shared session.
+[Measurements from the 20.20 unit](BEHAVIOUR-20.20.md).
 
 ## The unit and its API
 
@@ -21,10 +22,9 @@ clock and the random source. The docs use `http://factory-orin.local:8120`; the 
 
 ## The shared session
 
-The unit interprets one thing at a time, and everyone sees the same thing. The *session* is one source, one playhead
-and one interpretation, shared by every client. A select or a seek starts a new session (a new `session` id) for
-everybody; play and pause keep it. Every frame, event and activity carries its session id, and the interpreter starts
-afresh at a session change (it closes the moves that were open as `interrupted`).
+Every client shares one source, playhead and interpretation. Selecting a source or seeking starts a new session and
+assigns a new session ID. Play and pause keep the current ID. Frames, events and activities carry that ID. When it
+changes, the interpreter closes any open moves as `interrupted` and starts tracking the new session.
 
 The controls (`Session::watch`, `watch_at`, `seek`, `pause`, `play`, `focus`, `clear_focus`) change the session for
 every viewer. `Session::dry_run()` returns a session whose controls the server only checks: it says what it would do
@@ -99,18 +99,22 @@ async fn main() -> pdigger_factory_sdk::Result<()> {
 }
 ```
 
-Watching a camera (`session.watch(&camera.id)`) starts a session at media time 0 and rate 1.0 with `state.live`
-(`Live`: `phase`, `warmup`, `since`, `lag`). The phase is `connecting` until the camera's first frame (the worker's
-reason, in `Session::info`, says why when it takes long: `connecting to the camera`, `the camera is not answering`),
-`warming` while the interpreter runs on the first `warmup` seconds of frames, which warm the world but are never
-released, stored or served, and then `live`. Every change of phase bumps `revision`, so the long-poll and the stream's
-`clock` event carry it; `Session::until_live(timeout)` waits for `live` by reading the state every 250 ms
-(`UNTIL_LIVE_POLL`, on the client's clock) and fails with `live_timeout` after `timeout`. From then on, frames are
-released as they are interpreted, at the camera's rate: `g` counts the session's camera frames from 0 (the warm-up's
-included, so the first shown is about 15 at 5 a second), `t` is a frame's arrival in seconds since `since`, and the
-playhead runs at 1.0, `lag` behind the camera. Each live frame comes with the camera's own picture, the JPEG it was
-interpreted from (`Session::picture(g)`, `Session::picture_in(g, session)`; the newest 64 are kept); a recording has
-none.
+Call `session.watch(&camera.id)` to start a camera session at media time zero and playback rate 1.0. Read
+`state.live` (`phase`, `warmup`, `since`, `lag`) to follow the connection.
+
+| Phase | What the unit is doing |
+| --- | --- |
+| `connecting` | Waiting for the camera’s first frame. The worker status explains a delay. |
+| `warming` | Feeding the first frames to the interpreter. The unit discards these frames after warm-up. |
+| `live` | Publishing each interpreted frame and its camera image. |
+
+Each transition increments the session revision and reaches clients through long-poll or a `clock` event.
+`Session::until_live(timeout)` polls every 250 ms. It returns `live_timeout` when the timeout expires.
+
+Frame numbers start at zero and include warm-up. At five frames per second, the first visible frame is about 15.
+Media time measures seconds since the camera started, and the playhead trails the camera by its reported lag. The
+unit keeps the latest 64 camera JPEGs. Read one with `Session::picture(g)`. Use `Session::picture_in(g, session)` to
+check the session ID.
 
 | | A recording | A live camera |
 |---|---|---|

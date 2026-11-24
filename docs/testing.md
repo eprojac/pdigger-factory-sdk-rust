@@ -1,7 +1,7 @@
 # Testing
 
-Two subjects: testing your own code that uses the SDK (with the fake unit of the `testing` feature), and how this SDK
-is tested.
+Enable the `testing` feature to use `FakeFactory` in your tests. It serves a recording in process or through a
+loopback HTTP server. See [the SDK test suite](../TESTING.md) for coverage and integration checks.
 
 ## The fake unit
 

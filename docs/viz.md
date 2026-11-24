@@ -1,10 +1,8 @@
 # Visualisation
 
-`pdigger-factory-viz` draws what the SDK reads with [egui](https://github.com/emilk/egui), in the look of
-[texturecraft](https://github.com/storytold/texturecraft): its Craft theme tokens come from TextureCraft, and the
-theme palette, icon buttons and split layout from [craft-libs](https://github.com/storytold/craft-libs)' craft-ui (see
-[NOTICE](../NOTICE)). Every widget paints with egui's painter only (no GPU code of its own), so it works in any egui
-app (eframe, bevy_egui, ...) and renders headless for tests and pictures.
+Use `pdigger-factory-viz` to display a camera overlay, a 3D scene, hand activity or a tray report. The widgets draw
+with egui’s painter and also render headlessly for tests. The Craft theme, buttons and layout come from TextureCraft
+and craft-libs. [Third-party credits](../NOTICE).
 
 ```toml
 [dependencies]
@@ -15,9 +13,8 @@ egui = "0.37"
 
 Until the first release the crates come from the repository; from then on, `"0.1"` from crates.io.
 
-All pictures on this page are rendered headless by `examples/screenshots.rs` (`make pictures`): of the fixture
-recording `dry1-0296-0306-full` at g 1516 (5:02.4 of dry1), while the right hand carries stone 643, and the reports of
-the fixture recording `dry1-0018-0153`.
+Run `make pictures` to reproduce the screenshots headlessly. The camera views show frame 1516 of
+`dry1-0296-0306-full` at 5:02.4, when the right hand carries stone 643. The tray report uses `dry1-0018-0153`.
 
 ## The viewer
 

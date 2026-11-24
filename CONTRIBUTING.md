@@ -1,22 +1,16 @@
 # Contributing
 
-Thank you for improving the SDK. A change is ready when `make test` passes: it runs every test of both crates with
-the 100 % line and function coverage gate, the golden tests, the doc tests, every example and the check that the docs'
-code blocks are the examples, in Docker, with no network. `make lint` runs rustfmt and clippy with `-D warnings`.
+Run `make test` for both crates, coverage, doc tests and examples. Run `make lint` for rustfmt and Clippy with
+`-D warnings`. [Test instructions](TESTING.md).
 
 ## The contract comes first
 
-This SDK is one of four (Go, Python, Rust, TypeScript) that follow one contract,
-[spec/SDK-DESIGN.md](spec/SDK-DESIGN.md), and the API document, [spec/openapi.yaml](spec/openapi.yaml). Both, and the
-fixtures, are shared by the four languages and change in all four at once: do not edit `spec/`, `fixtures/` or
-`docs/BEHAVIOUR-20.20.md` here; open an issue or a pull request here and the maintainers make the change in all four. In particular:
+All four SDKs follow the [same behaviour contract](spec/SDK-DESIGN.md) and [HTTP API](spec/openapi.yaml). The
+maintainers sync the specification, fixtures, camera measurements and architecture diagram from the shared project.
+Open an issue or pull request here to propose a change to these shared files.
 
-- the sentences of events, activities and the summary are golden-tested byte for byte against `fixtures/golden/`; a
-  change to the text is a change to the contract;
-- names follow the API's `operationId`s and the contract's words (source, session, frame, layer, world, event,
-  activity), in Rust's snake case;
-- the behaviour (what is retried, how streams resume, what the interpreter counts) is the contract's; the shape
-  (builders, streams, errors) is Rust's.
+The tests compare event, activity and summary text with `fixtures/golden/` byte for byte. Use the API’s
+`operationId` names in Rust naming style. The contract also defines retries, stream recovery and interpreter counts.
 
 ## Code
 
@@ -36,20 +30,19 @@ fixtures, are shared by the four languages and change in all four at once: do no
 
 ## Docs and examples
 
-Every Rust block of `README.md`, the crates' READMEs and `docs/` is a file of `crates/*/examples/`, marked
-`<!-- example: <path> -->` above the block; `scripts/run-examples.sh` runs every example and fails when a block is
-not that file word for word. To change a sample, change the example first, run it, then copy it into the docs. The
-pictures in `docs/img/` are drawn by `make pictures` from the fixture recording (except `architecture.*`, the
-picture shared by the four languages); never edit them by hand.
+Every Rust code block in the READMEs and guides has an `<!-- example: <path> -->` marker and contains that complete
+example file. Edit the example, run it, then copy it into the guide. `scripts/run-examples.sh` checks the two
+copies. Use `make pictures` to regenerate the recording images. The architecture diagram comes from the shared
+project.
 
 ## Commits, pull requests and releases
 
-Keep a change to one subject, say in the message what it changes and why, and add a line to `CHANGELOG.md` under a
-heading `## Unreleased` for anything a user would notice, then copy it into both crates
-(`for c in crates/*/; do cp CHANGELOG.md "$c"; done`): `make test` and CI compare the copies.
+Keep each change focused. Explain what it changes and why. Add user-visible changes to the unreleased section of
+`CHANGELOG.md` and copy it into both crates. The test suite compares the copies.
 
-To release, follow [RELEASING.md](RELEASING.md): the changelog section, both versions in the workspace `Cargo.toml`,
-`Cargo.lock`, `make test`, then a tag `v<version>`. The release workflow runs the tests again, publishes `pdigger-factory-sdk` and then
-`pdigger-factory-viz` to crates.io (secret `CARGO_REGISTRY_TOKEN`), and attaches the viewer's binaries for Linux,
-macOS and Windows to a GitHub release whose notes are that section of the changelog, in the order and with the
-re-run rule of [RELEASING.md](RELEASING.md).
+```sh
+for crate in crates/*/; do cp CHANGELOG.md "$crate"; done
+```
+
+Follow the [release instructions](RELEASING.md) to publish both crates and the Linux, macOS and Windows viewer
+binaries.

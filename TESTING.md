@@ -4,9 +4,9 @@
 make test
 ```
 
-builds [Dockerfile.test](Dockerfile.test) (the `rust:1.100.0-bookworm` image, cargo-llvm-cov 0.9.1, every dependency
-fetched and compiled at build time) and runs it with `docker run --rm --network none`, which runs
-[scripts/test.sh](scripts/test.sh):
+`make test` builds the [test image](Dockerfile.test) with Rust 1.100.0 and cargo-llvm-cov 0.9.1. The build fetches
+and compiles the dependencies. The container then runs the [test script](scripts/test.sh) with networking disabled.
+It checks the following in order.
 
 1. `cmp` of `LICENSE`, `NOTICE` and `CHANGELOG.md` with each crate's copy in `crates/*/` (the published crates carry
    them; CI's lint job checks the same), and a run of
@@ -20,8 +20,8 @@ fetched and compiled at build time) and runs it with `docker run --rm --network 
    unit on 127.0.0.1 (`examples/fake_server.rs` replaying `dry1-0296-0306-full` as its camera), the headless
    screenshots, and the check that every Rust block of the READMEs and `docs/` is an example, word for word.
 
-No test uses the network or a real unit, and none sleeps for real more than 50 ms: tests use the fake unit
-(`pdigger_factory_sdk::testing`) or fixture data, tokio's paused time or a `ManualClock`, and seeded randomness.
+Tests run against fixtures and `pdigger_factory_sdk::testing`. They control time with Tokio’s paused clock or
+`ManualClock` and use seeded randomness. Each real sleep is at most 50 ms.
 
 ## What the tests cover
 

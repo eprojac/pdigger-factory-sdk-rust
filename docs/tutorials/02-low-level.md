@@ -1,12 +1,19 @@
-# Low level: one call per operation
+# Read a frame through the HTTP API
 
-Under the interpreter, `factory.api()` has one async method for each of the unit's 32 operations, named after its
-`operationId` and returning a typed model of its reply (fields the SDK does not know are kept in `extra`), and `codec`
-decodes what the replies pack: maps, bitsets, depth, joints and stone tuples. Use this level to build what the
-interpreter does not: your own drawing, a dashboard of the unit, a bridge to your MES or ERP, a check of the model.
+<a id="low-level-one-call-per-operation"></a>
 
-The program is [examples/tutorial_low_level.rs](../../crates/pdigger-factory-sdk/examples/tutorial_low_level.rs), one
-step after another; every step only reads, or sends a dry run. Give it a unit's address and, if you like, a frame:
+Use `factory.api()` to check the unit’s status, request a frame and draw its stones and hands. Each method maps to
+one HTTP operation. The codec unpacks data such as depth images, joint positions and stone shapes.
+
+From the repository root, run the
+[examples/tutorial_low_level.rs](../../crates/pdigger-factory-sdk/examples/tutorial_low_level.rs) program.
+
+```sh
+cargo run --example tutorial_low_level -- http://factory-orin.local:8120
+```
+
+<details>
+<summary>Show the complete Rust example</summary>
 
 <!-- example: crates/pdigger-factory-sdk/examples/tutorial_low_level.rs -->
 ```rust
@@ -113,6 +120,8 @@ async fn main() -> pdigger_factory_sdk::Result<()> {
     Ok(())
 }
 ```
+
+</details>
 
 Against the SDK's fake unit playing the fixture dry1-0296-0306-full (`fake_server`, without `--live`), at frame 1510,
 it prints what the Python and TypeScript programs print there (the fake does not draw: its draw lists are the unit's

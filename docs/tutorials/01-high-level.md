@@ -1,12 +1,19 @@
-# High level: what the hands did
+# Follow hand movements
 
-The interpreter turns the unit's frames into what a person would say happened at the work area: events
-(`1:19.2 Left hand lifts stone 155`), activities (a hand moving one stone, or a burst of pushes), the state of both
-hands, the stones in view, and the trays that pass through. It is the same interpreter for a recording replayed
-offline and for a unit followed live, and all four languages give the same sentences for the same frames.
+<a id="high-level-what-the-hands-did"></a>
 
-This tutorial replays a recording first, so it needs no unit, and then follows one. Its program is
-[examples/tutorial_high_level.rs](../../crates/pdigger-factory-sdk/examples/tutorial_high_level.rs):
+Follow one worker’s hands through a recording. You’ll read individual events, group them into moves and pushes, then
+trace a single stone. The same interpreter can follow a live session.
+
+From the repository root, run the
+[examples/tutorial_high_level.rs](../../crates/pdigger-factory-sdk/examples/tutorial_high_level.rs) program.
+
+```sh
+cargo run --example tutorial_high_level -- fixtures/recordings/dry1-0018-0153.ndjson.gz 155
+```
+
+<details>
+<summary>Show the complete Rust example</summary>
 
 <!-- example: crates/pdigger-factory-sdk/examples/tutorial_high_level.rs -->
 ```rust
@@ -69,6 +76,8 @@ fn main() -> pdigger_factory_sdk::Result<()> {
     Ok(())
 }
 ```
+
+</details>
 
 `Replay`'s methods are synchronous iterators (no runtime needed), and each is one pass over the file, streamed: only
 the interpreter's state is in memory, so a recording of hours works the same. Run it on the fixture

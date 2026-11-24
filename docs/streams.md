@@ -1,8 +1,8 @@
 # Streams
 
-The mid level: frames as they are released, with the API's stream rules handled for you. `FactoryClient::streams()`
-gives `Streams`; each method returns a `futures::Stream` of `Result<StreamItem>`, and dropping it closes the
-connection.
+Use a frame stream for a camera overlay, a feed of scene geometry or your own frame-by-frame analysis. Choose
+server-sent events for a continuous connection, long-poll for individual HTTP requests, or raw packets for model
+outputs. `FactoryClient::streams()` returns streams of `Result<StreamItem>`. Drop a stream to close its connection.
 
 <!-- example: crates/pdigger-factory-sdk/examples/streams.rs -->
 ```rust

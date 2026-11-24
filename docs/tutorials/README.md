@@ -1,42 +1,31 @@
 # Tutorials
 
-Five short tutorials take you from simple mode, one report per tray, through advanced mode to drawing a frame by hand.
-Every program in them is an example of this repository, and the code blocks are those files, whole:
-`scripts/run-examples.sh` runs each one against the fixture recordings and the SDK's fake unit, and checks that the
-pages still show them as they are.
+Start with a tray report. The later tutorials show how to read the events and frames behind it.
 
-| Tutorial | What you build |
+| Tutorial | What you’ll do |
 | --- | --- |
-| [Start here](00-start-here.md) | simple mode: one report per tray (the stones removed, added and moved, when and where, and whether that is all of it), the same reports as data, the details behind a report that is not complete, and the reports of a unit, live |
-| [High level](01-high-level.md) | advanced mode: what the hands did, as sentences and as data: activities, trays and the stones taken off them, the summary, a stone's path; replayed offline, then followed live |
-| [Low level](02-low-level.md) | advanced mode: one call per API operation: health and speed, the model, a stone and the focus, frames and the model's maps, draw lists, stones and hands drawn by hand, a frame's image data |
-| [Live cameras](03-live-cameras.md) | advanced mode: a plant camera selected, warmed up and followed, its pictures, and what differs on a camera |
-| [Rust](04-rust.md) | what is particular to this SDK: tokio and streams, synchronous replays, errors, the egui viewer, the fake unit in your tests |
+| [Read a tray report](00-start-here.md) | Read the changes, export a row and investigate uncertainty. |
+| [Follow the interpreter](01-high-level.md) | Follow hand movements, get tray facts and trace a stone. |
+| [Read individual frames](02-low-level.md) | Inspect model maps, draw stones and hands, and read a frame image. |
+| [Watch a live camera](03-live-cameras.md) | Select a camera, wait for warm-up and read its pictures. |
+| [Use the Rust SDK](04-rust.md) | Use Tokio streams, synchronous file replay and the viewer. |
 
 ## Before you start
 
-- Rust 1.88 or newer. Until the crates are on crates.io, take the SDK from this repository:
+Follow the [installation steps](../../README.md#install) to get the SDK and its example recordings. Run the commands
+below from the repository root.
 
-  ```sh
-  cargo add --git https://github.com/eprojac/pdigger-factory-sdk-rust pdigger-factory-sdk
-  cargo add tokio --features macros,rt-multi-thread
-  cargo add futures
-  ```
+The replay steps use the bundled files in `fixtures/recordings/`. You can also
+[download longer recordings](https://factory.pdigger.com/developers/data/).
 
-- To run the tutorials' programs as they are, clone the repository and run them there:
-  `cargo run --example tutorial_reports`.
-- For the first two tutorials, nothing else: they replay recordings, offline, such as the fixture recordings in
-  `fixtures/recordings/` or the published ones at https://factory.pdigger.com/developers/data/.
-- For the live steps, a unit's address as the first argument (the examples ask http://factory-orin.local:8120 by
-  default). Without a unit, the SDK's fake one serves a recording on 127.0.0.1 and prints its address:
-  `cargo run --example fake_server --features testing -- fixtures/recordings/dry1-0296-0306-full.ndjson.gz`
-  (add `--live` for a camera made from the recording).
+For a live step, pass the unit’s base URL as the example’s argument. To use a fake unit, run
+`cargo run --example fake_server --features testing -- fixtures/recordings/dry1-0296-0306-full.ndjson.gz` in a
+second terminal and use the address it prints. Add `--live` to simulate a camera.
 
-The unit interprets one source at a time for everybody: a recording or a live camera, on one shared session. A
-control (select, seek, play, pause, focus) changes what every viewer sees, so the tutorials send dry runs, which the
-unit checks without applying them; only the live-camera tutorial really selects a camera.
+A unit has one shared session. Selecting a camera, seeking or changing playback affects everyone watching. The
+live-camera tutorial selects a real source. The other control examples use dry runs.
 
-The same tutorials, step for step, are in the other languages:
-[Go](https://github.com/eprojac/pdigger-factory-sdk-go/tree/main/docs/tutorials),
-[Python](https://github.com/eprojac/pdigger-factory-sdk-python/tree/main/docs/tutorials) and
+The same tutorials are available in
+[Python](https://github.com/eprojac/pdigger-factory-sdk-python/tree/main/docs/tutorials) ·
+[Go](https://github.com/eprojac/pdigger-factory-sdk-go/tree/main/docs/tutorials) ·
 [TypeScript](https://github.com/eprojac/pdigger-factory-sdk-ts/tree/main/docs/tutorials).

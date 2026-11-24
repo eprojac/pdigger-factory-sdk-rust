@@ -1,8 +1,9 @@
-# Rust: what is particular to this SDK
+# Rust API conventions
 
-The four languages share their levels, their models and their sentences
-([other languages](../../README.md#the-other-languages)). This page is about what is Rust's own: two crates, tokio and
-streams, synchronous replays, one error type, the egui viewer, and the fake unit in your tests.
+<a id="rust-what-is-particular-to-this-sdk"></a>
+
+Choose between synchronous file replay and Tokio streams, handle SDK errors, and run tests against the fake unit.
+The optional egui crate adds a viewer.
 
 ## Two crates
 

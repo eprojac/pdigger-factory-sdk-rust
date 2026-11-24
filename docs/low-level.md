@@ -1,8 +1,8 @@
 # The low level
 
-`FactoryClient::api()` gives `Api`: one async method for each of the 32 operations of
-[spec/openapi.yaml](../spec/openapi.yaml), named after its `operationId` in snake case, with typed requests and
-replies (`models`), one error type, retries, and the codec for the packed data.
+Use `FactoryClient::api()` to request a specific frame, fetch a model output or control the shared session. The 32
+typed methods correspond to the [OpenAPI operations](../spec/openapi.yaml). The codec decodes packed maps, bitsets,
+depth and joint data.
 
 <!-- example: crates/pdigger-factory-sdk/examples/low_level.rs -->
 ```rust

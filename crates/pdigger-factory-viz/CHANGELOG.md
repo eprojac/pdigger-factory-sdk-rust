@@ -1,69 +1,44 @@
 # Changelog
 
-All notable changes of the Rust SDK (`pdigger-factory-sdk`) and its visualisation crate (`pdigger-factory-viz`).
-Versions follow [semantic versioning](https://semver.org); the release workflow takes a version's notes from its
-section here.
+This SDK follows [semantic versioning](https://semver.org/). The release workflow uses the matching version section
+as its release notes.
 
 ## 0.1.0 - Unreleased
 
-The first release, for the API v2.2: what the 20.20 unit serves (build `claude-20261123-speckle7`: four recordings, six
-plant cameras, the stones' looks and the speckle answers).
+Initial SDK for API v2.2. The reference unit ran build `claude-20261123-speckle7` with four recordings and six plant
+cameras. It supplies stone appearance data and surface-pattern comparisons.
 
-- **Reports, simple mode** (SDK-DESIGN.md 4.7). One `TrayReport` per tray, from `Tray::report`,
-  `Interpreter::tray_reports` (as each tray leaves a unit) and `Replay::tray_reports` (every tray of a recording): the
-  stones removed, added and moved (`TrayChange`), when and where (each one's final place on the tray), and whether
-  that is the tray's whole account, as text (`describe`) and as data (`serde`). The tray's open account as it leaves
-  (`Tray::open`, `TrayOpen`, SDK-DESIGN.md 4.6.8), each fact's reason as a code (`TrayFact::code`), and the tray
-  stones' `first_place`, `left_place` and `touched`, which the report reads; with the stones' looks, `identified`
-  facts and the tray stones' `question`, `looks`, `by_look`, `look_lost` and `open`.
-- **The unit's speckle answers** (SDK-DESIGN.md 4.6.12, `world.speckle` since build `claude-20261123-speckle3`), read
-  as a tray's: `TraySpeckle` in `Update::speckle`, `Interpreter::speckle` and `InterpreterCore::speckle` (the newest
-  1024) and `ReplayOutput::speckle`, each tray stone's part as `TrayStone::speckle` (`StoneSpeckle`: `score`, `second`,
-  `clean`, `found`, `pair`, `same`), and `describe_speckle_txt`, the golden `speckle.txt`; `WorldLayer::speckle`
-  (`WorldSpeckle`) is `None` when the answer does not fit by value.
-- **The leaving's speckle answer** (SDK-DESIGN.md 4.6.13, tray rules version 8), in every tray report: the stones the
-  unit pairs are sure, confirmed on their world stone or linked again (`identified` facts with codes `speckle_same`,
-  `speckle_moved` and `speckle_found`, `SPECKLE_CODES`; `TrayStone::by_speckle`), which the self-check's C3, C4 and C9
-  allow; each tray stone's `evidence` as its tray leaves (`TrayEvidence`: `found`, `not_found` or `undecided`); and
-  every report change's `confidence` (`TrayChange::confidence`, from the measured constants `CONFIDENCE` and
-  `MOVED_CONFIDENCE`), at the end of each change line of `describe` (` (0.98)`, ` (unclear, 0.71)`). A pair whose finds
-  give no score links nothing, unless its stone is sure and already on its world stone. dry1-0018-0153's tray: 11
-  removed, 13 added, 8 moved and 1 stone not sure.
-- **Presence questions** (SDK-DESIGN.md 4.6.1). A tray stone without a look chain that is not seen at two calm moments
-  while nothing could have changed it is held in question (`TrayStone::question`, cause `unseen`; not sure, no fact) and
-  is sure again once the world sees it again on its place with no hand at work, no held stone, no stone a hand took away
-  and no push on the tray meanwhile, no other stone of its size within 0.12 of its place, and no look of its world stone
-  that matches another stone in question or lost; otherwise its fact `unsure` comes where the question ends, `opened` at
-  its doubt. A question settled on a calm moment that does not show the stone (at once at its doubt, or by a sight
-  before that calm moment) holds only if the next calm moment that shows it, or the tray's last frame when the tray
-  leaves first and that frame shows it, finds nothing at work since (else a plain `unsure` fact there). A stone with a
-  look chain is never held in question: its doubt is a question only its looks settle. Frames the tray rules can not
-  read (a frame without a world, a jump in `g`, a `gap` or `reset` of the stream, any revision, the moving frames of a
-  tray that goes on) end the questions open then; `InterpreterCore::gap` tells the core about a `gap` or `reset` event
-  (the `Interpreter` calls it for those of its stream, `Replay` and `ReplayStream` for the `gap` and `reset` lines that
-  decode), and `InterpreterCore::feed_line` feeds a core of your own the lines of a recording as a replay does (the
-  viewer reads a recording URL with it). A settled stone gets no `unsure` fact, one whose question ends gets its fact
-  there, and the leaving counts its last snapshot's own frame only once for a stone nothing could have changed since its
-  last sight (a stone not detected only there gets no `unsure` fact).
-- **Certain removals and continuation** (SDK-DESIGN.md 4.6.1). A lost tray stone is removed for certain only when a hand
-  touched its world id (a `lift`, `hinge`, `carry`, `place`, `drop` or `gone`, a `push` with a `side`, or a `delete`
-  with why `hand` or `carried-away`) from the last calm moment before its loss, or from 3.0 s before it was last seen if
-  that is earlier, up to its loss; else it stays lost, and a rename or the leaving pairs it, or the leaving reports it
-  removed, unclear, with the open cause `no_hand`. A visit continues the open tray only when nine tenths of its first
-  frame's stones were seen on it, so a new board that carries over many of the last board's world ids is a tray of its
-  own. On the four published recordings: 52 certain removals, 49 of them right by the maintainers' camera check, and 628
-  trays with 532 reports.
-- **The leaving's evidence** (SDK-DESIGN.md 4.6.1, Leaving). As a tray leaves, a lost tray stone is linked to a new
-  world stone near it only with evidence that it is the same stone: their looks agree, or the world stone was first seen
-  at or after the lost stone was last seen (less 3.0 s), no hand worked within 0.40 of either place since, and their
-  looks do not disagree. Without it the lost stone is removed and the world stone added, both unclear (each the other's
-  candidate in the open account), so a stone's id never passes to a stone that may be another: by the maintainers'
-  camera check, every stone that left dry1's and dry2's trays is reported removed. An unidentified stone that the
-  leaving point's world shows detected and not held is present as the tray leaves, at its place there (positive evidence
-  at departure). So is one that world keeps there (lists it, not detected), not held, with less than 0.30 of its box
-  under one other unheld stone's box there: by the maintainers' camera check, 32 of the 63 stones this adds on the four
-  published recordings were there (dry1's tray 2 accounts for the 44 stones the video shows), and 25 are boxes on
-  jul30's bare boards that are not there.
+### Tray reports and tracking
+
+- Read one `TrayReport` for each completed tray, live or from a recording. Each change carries a stone ID, a time, a
+  position and a confidence score. Use `serde_json::to_string(&report)` for the complete data.
+  [Report fields](https://github.com/eprojac/pdigger-factory-sdk-rust/blob/main/docs/interpreter.md#report-fields).
+  Inspect `tray.open` for unresolved identities and use reason codes to investigate individual facts.
+- Read the unit’s `world.speckle` comparisons (build `claude-20261123-speckle3` onwards). `TraySpeckle` groups
+  matches by tray. `StoneSpeckle` gives a stone’s best and second-best scores, match quality and pairing. The
+  interpreter keeps the latest 1,024 comparisons.
+  [Speckle fields and examples](https://github.com/eprojac/pdigger-factory-sdk-rust/blob/main/docs/interpreter.md#the-units-speckle-check).
+- Version 8 of the tray rules uses the departure comparison to confirm or recover stone IDs. It records
+  `speckle_same`, `speckle_moved` or `speckle_found` as the reason. The evidence can be found, absent or undecided.
+  Each change’s confidence also appears in the printed report.
+  [Confidence scores](https://github.com/eprojac/pdigger-factory-sdk-rust/blob/main/docs/interpreter.md#confidence).
+- If a stone disappears at two calm moments, the SDK can hold its identity open. It restores the identity if the
+  stone returns in place and the intervening frames rule out a swap. Hand activity, competing matches, missing
+  frames or a stream reset can end the question. Stones with an appearance history follow their own matching rules.
+  [Presence and identity rules](https://github.com/eprojac/pdigger-factory-sdk-rust/blob/main/spec/SDK-DESIGN.md#461-the-tray-rules).
+- A certain removal requires evidence of recent hand contact. Otherwise a lost stone stays available for matching or
+  becomes an unclear removal at departure. A visit continues the same tray only if at least 90% of its initial
+  stones were already seen on it. Across the four recordings, the SDK found 628 trays and produced 532 reports. A
+  video check confirmed 49 of 52 certain removals.
+- At departure, the SDK uses appearance, timing and nearby hand activity to decide whether a new tracker ID belongs
+  to a lost stone. If the evidence is ambiguous, it records an unclear removal and addition and lists each as a
+  candidate for the other. The departure rules also allow some previously tracked stones that have no bounding box
+  at departure. In a video check, 32 of the 63 extra stones counted this way were present. Another 25 were false
+  detections on empty jul30 boards.
+  [Departure rules](https://github.com/eprojac/pdigger-factory-sdk-rust/blob/main/spec/SDK-DESIGN.md#461-the-tray-rules).
+
+### Client, replay and streams
+
 - **High level.** `Interpreter`: follows the shared session (a recording or a plant camera) and yields typed events,
   activities (moves and push bursts), hand states, the stone inventory and a summary, each with the sentence the four
   languages share; trays with tray stones, stone ids of the SDK's own that are never reused (a second stone first seen
@@ -95,6 +70,19 @@ plant cameras, the stones' looks and the speckle answers).
   member its model cannot hold is left out, a `source` that is no catalog entry too), and a read error (a gzip stream
   cut short, a dropped download) is its one `Err`, with no final update. A backoff with a base of zero waits zero at
   every attempt.
+
+### Visualisation
+
+- **Visualisation** (`pdigger-factory-viz`): egui widgets in the look of texturecraft (`OverlayView`, `SceneView`,
+  `EventFeed`, `HandCards`, `ViewerApp`), `ReportView` (a tray's report as a picture: the tray as it arrived and as it
+  left, from above, its stones coloured by the report; `report_marks()` and `REPORT_COLORS`, the colours of the
+  TypeScript SDK's), the `pdigger-factory-viewer` app for recording files, recording URLs and units (`[` and `]` jump
+  between tray points; its Reports button lists the trays that left and shows their reports), `follow` and
+  `follow_until` (which also ends when a stop future completes, even while an idle unit sends nothing), and software
+  rendering for headless tests and pictures.
+
+### Testing and documentation
+
 - **Testing** (feature `testing`): `FakeFactory`, a fake unit that answers the whole API from a recording and recorded
   replies, in process or on 127.0.0.1 (`FakeServer`), with a live camera, `LIVE_CAMERA` (the recording as a camera
   session that connects, warms up and goes live on the fake's clock, with a picture for each of its newest frames),
@@ -104,15 +92,9 @@ plant cameras, the stones' looks and the speckle answers).
   as the unit numbers them, controls and errors come in the unit's order and words, an open stream follows a new
   program and the camera's phases, and on the fake's own clock (starting at the recording's time) a stream or a
   long-poll waiting for a phase moves it on; `with_linked_clock()` leaves the clock to its owner.
-- **Visualisation** (`pdigger-factory-viz`): egui widgets in the look of texturecraft (`OverlayView`, `SceneView`,
-  `EventFeed`, `HandCards`, `ViewerApp`), `ReportView` (a tray's report as a picture: the tray as it arrived and as it
-  left, from above, its stones coloured by the report; `report_marks()` and `REPORT_COLORS`, the colours of the
-  TypeScript SDK's), the `pdigger-factory-viewer` app for recording files, recording URLs and units (`[` and `]` jump
-  between tray points; its Reports button lists the trays that left and shows their reports), `follow` and
-  `follow_until` (which also ends when a stop future completes, even while an idle unit sends nothing), and software
-  rendering for headless tests and pictures.
-- Four tutorials (`docs/tutorials/`: high level, low level, live cameras, Rust), whose programs
-  (`tutorial_high_level`, `tutorial_low_level`) print what the other languages' tutorials print over the same frames.
+- Five [runnable tutorials](https://github.com/eprojac/pdigger-factory-sdk-rust/blob/main/docs/tutorials/README.md)
+  cover tray reports, the interpreter, frame data, live cameras and Rust conventions. The first tutorial explains a
+  real tray report and follows the uncertain changes back to their evidence.
 - Unit tests in Docker with no network and 100 % line and function coverage; golden tests over the eighteen fixture
   recordings; doc tests; every example run against the fixtures and the fake unit; opt-in integration tests against a
   unit (read-only) and over the complete recordings.

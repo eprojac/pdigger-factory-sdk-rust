@@ -1,9 +1,7 @@
 # Replays
 
-A recording is what an API client saw of a session: every frame with its layers and the side events (clock, worker,
-gaps, resets), in the order received. The interpreter reads one exactly as it follows a unit, so a replay prints
-the same sentences the unit's session did. Replays need no unit and no network (a file), or only an HTTP server (a
-URL).
+Use `Replay` for a synchronous pass over a local file. Use `ReplayStream` for a recording URL or to play frames at
+their original pace. Both feed the recorded frames and side events to the same interpreter as a live unit.
 
 - The four complete recordings (aug28, jul30, dry1, dry2: every frame interpreted, with their summaries; dry1
   recorded on the 20.20 unit, the other three in a replay of the same model and build on a Mac, as each header's
@@ -110,11 +108,10 @@ replay runs as fast as it reads. The clock lines of the recording give the event
 
 ## Trays
 
-`trays()` reads the whole recording and lists its trays, each with the point where it had arrived and settled and the
-point just before it moved out, its tray stones (the SDK's own ids, never reused) and its facts
-([the interpreter](interpreter.md#trays-and-tray-stones)). `window()` is the media span to replay or to show. To show
-a point on the unit, select the tray's video there; that moves the session for every viewer, so the example sends dry
-runs:
+`trays()` reads the full recording and returns its trays in order. Each tray includes its stones, facts and the
+points when it settled and left. Use these points to seek to the same tray in a player.
+[Tray identity and events](interpreter.md#trays-and-tray-stones). Use `window()` for the media interval. The example
+previews a seek with a dry run because a real seek moves the playhead for everyone.
 
 <!-- example: crates/pdigger-factory-sdk/examples/tray_points.rs -->
 ```rust

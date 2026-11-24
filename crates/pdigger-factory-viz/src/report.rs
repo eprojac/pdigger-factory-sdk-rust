@@ -17,7 +17,7 @@ use pdigger_factory_sdk::{Tray, TrayChange, TrayReport, TrayStone, TrayStoneStat
 
 use crate::craft::Tokens;
 use crate::craft::theme::{hex, semibold};
-use crate::scene::{OrbitCamera, SceneView, box_corners, quat, rotate};
+use crate::scene::{OrbitCamera, SceneView, StonePrism, quat, rotate};
 
 /// What a tray's report says of a stone: removed, added or moved; else whether the SDK is sure of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -226,8 +226,13 @@ const LEGEND_ROW: f32 = 18.0;
 
 /// A side's extent in scene (x, y): its board and its stones (a unit square about the origin without either).
 fn extent(scene: &Scene3D) -> Rect {
-    let mut points: Vec<Pos2> =
-        scene.stones.iter().filter_map(box_corners).flatten().map(|c| pos2(c[0], c[1])).collect();
+    let mut points: Vec<Pos2> = scene
+        .stones
+        .iter()
+        .filter_map(StonePrism::new)
+        .flat_map(StonePrism::vertices)
+        .map(|p| pos2(p[0], p[1]))
+        .collect();
     if let Some(b) = &scene.board {
         let (c, s) = ((b.theta as f32).cos(), (b.theta as f32).sin());
         for (x, y) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
@@ -530,12 +535,7 @@ impl<'a> Side<'a> {
 
     /// The labels: each removed, added or moved stone's mark, and the middle of its top on screen.
     fn labels(&self) -> Vec<(&ReportMark, Pos2)> {
-        let top = |stone: &DrawStone3D| {
-            let c = box_corners(stone)?;
-            self.at([4, 5, 6, 7]
-                .iter()
-                .fold([0.0; 3], |m, &k| [m[0] + c[k][0] / 4.0, m[1] + c[k][1] / 4.0, m[2] + c[k][2] / 4.0]))
-        };
+        let top = |stone: &DrawStone3D| self.at(StonePrism::new(stone)?.top_centre());
         self.marked().filter(|(_, m)| !m.label.is_empty()).filter_map(|(s, m)| Some((m, top(s)?))).collect()
     }
 
@@ -560,7 +560,7 @@ impl<'a> Side<'a> {
         }
         for (stone, mark) in self.marked().filter(|(_, m)| !m.certain) {
             let top: Option<Vec<Pos2>> =
-                box_corners(stone).and_then(|c| [4, 5, 7, 6].iter().map(|&k| self.at(c[k])).collect());
+                StonePrism::new(stone).and_then(|prism| prism.top.into_iter().map(|p| self.at(p)).collect());
             if let Some(top) = top {
                 dashed(painter, &top, Stroke::new(1.5, mark.role.color()));
             }
@@ -866,8 +866,13 @@ mod tests {
                 let side = Side::new(scene, marks, view);
                 assert_eq!(side.camera.fov_y, FOV);
                 // every corner of every stone inside the view, the outermost with a little room
-                let corners: Vec<Pos2> =
-                    scene.stones.iter().filter_map(box_corners).flatten().map(|c| side.at(c).unwrap()).collect();
+                let corners: Vec<Pos2> = scene
+                    .stones
+                    .iter()
+                    .filter_map(StonePrism::new)
+                    .flat_map(StonePrism::vertices)
+                    .map(|p| side.at(p).unwrap())
+                    .collect();
                 let inside = view.shrink(view.width().min(view.height()) * 0.005);
                 assert!(corners.iter().all(|p| inside.contains(*p)), "{view:?}");
                 // the extent (board and stones) fills the view's width or height, but for a little room

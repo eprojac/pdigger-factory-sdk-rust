@@ -73,6 +73,8 @@ cameras. It supplies stone appearance data and surface-pattern comparisons.
 
 ### Visualisation
 
+- The 3D viewer and tray reports extrude each dogbone stone’s 12-vertex footprint to its recorded height. The
+  shoulders and narrow waist follow the shape shown in the video overlay.
 - **Visualisation** (`pdigger-factory-viz`): egui widgets in the look of texturecraft (`OverlayView`, `SceneView`,
   `EventFeed`, `HandCards`, `ViewerApp`), `ReportView` (a tray's report as a picture: the tray as it arrived and as it
   left, from above, its stones coloured by the report; `report_marks()` and `REPORT_COLORS`, the colours of the

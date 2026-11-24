@@ -23,7 +23,7 @@ reference, `dry1.world` (9,042 frames) took about 14 seconds and 1.5 GB of memor
 | Widget | Use |
 | --- | --- |
 | `OverlayView` | Draw stones, hand joints and the selected stone over a frame. Supports hover picking. |
-| `SceneView` | Orbit a 3D view of the board, stone boxes and hand skeletons. |
+| `SceneView` | Orbit a 3D view of the board, extruded stone outlines and hand skeletons. |
 | `EventFeed` and `HandCards` | Show events and the current activity of each hand. |
 | `ReportView` | Compare the tray at arrival and departure, with changed stones labelled and the report text alongside. `report_marks` and `REPORT_COLORS` expose the same marks and colours. |
 | `ViewerApp` | Combine the views with playback controls and a list of finished tray reports. |

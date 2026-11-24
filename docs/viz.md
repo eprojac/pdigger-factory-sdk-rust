@@ -66,8 +66,9 @@ the stone under the pointer; `VideoTransform` maps native pixels to the screen a
 ![The 3-D scene at g 1516: the board, stones as boxes, stone 643 held over the board, the skeleton and the wrist rings](img/scene-dry1-0296-0306-full-g1516.png)
 
 `SceneView::new(&scene, &mut camera)` draws a `Scene3D` (the draw list of `renderScene3d`, or `draw::scene_of_frame`):
-the board, every stone as a shaded box (back faces culled, far to near), the focus path (`focus.path3d`, as a frame's
-focus carries it), the skeleton and the wrist rings, seen through an `OrbitCamera` (z up). Dragging orbits, scrolling zooms, a double click frames the scene again
+the board, shaded stones, the focus path (`focus.path3d`), the skeleton and the wrist rings through an `OrbitCamera`
+(z up). Dogbones use the video overlay’s 12-vertex footprint, extruded to the solid’s height and rotated into its pose.
+Rectangular stones use a four-corner footprint. Dragging orbits, scrolling zooms, a double click frames the scene again
 (`OrbitCamera::framing`); `OrbitCamera::top` looks straight down.
 
 ## `EventFeed` and `HandCards`

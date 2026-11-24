@@ -11,7 +11,7 @@ use egui::{
     Event, Modifiers, MouseWheelSource, MouseWheelUnit, PointerButton, Pos2, RawInput, Rect, TouchPhase, Ui, Vec2,
     pos2, vec2,
 };
-use pdigger_factory_sdk::models::{DrawStone3D, Layer, Overlay2D, Scene3D, Side, StoneShape};
+use pdigger_factory_sdk::models::{DrawStone3D, Layer, Overlay2D, Scene3D, Side, StoneFamily, StoneShape};
 use pdigger_factory_sdk::testing::FakeFactory;
 use pdigger_factory_sdk::{Activity, Frame, Replay, Update};
 use pdigger_factory_viz::craft::{Accent, Brightness, theme};
@@ -215,6 +215,49 @@ fn recorded_renders_paint() {
     h.frame(vec![], |ui| {
         SceneView::new(&listed, &mut top).show(ui);
     });
+}
+
+#[test]
+fn dogbone_caps_leave_the_notches_open_and_the_waist_has_a_wall() {
+    let rect = Rect::from_min_size(Pos2::ZERO, vec2(480.0, 360.0));
+    let stone = DrawStone3D {
+        family: StoneFamily::Dogbone,
+        pos: vec![0.0, 0.0, 0.0],
+        dims: vec![1.0, 0.6, 0.24],
+        alpha: 1.0,
+        ..Default::default()
+    };
+    let scene = Scene3D { stones: vec![stone], ..Default::default() };
+    let camera = OrbitCamera::top([0.0; 3], 1.7);
+    let ctx = egui::Context::default();
+    let paint = |scene, mut camera| {
+        render(&ctx, rect.size(), 1.0, 2, |ui| SceneView::new(scene, &mut camera).paint(ui.painter(), rect))
+    };
+    let empty = Scene3D::default();
+    let sample = |camera: &OrbitCamera, shot: &pdigger_factory_viz::raster::Snapshot, point| {
+        let (p, _) = camera.project(point, rect).unwrap();
+        shot.pixel(p.x as usize, p.y as usize)
+    };
+    for sign in [1.0, -1.0] {
+        let camera = OrbitCamera { pitch: sign * camera.pitch, ..camera };
+        let (image, background) = (paint(&scene, camera), paint(&empty, camera));
+        let z = sign * 0.12;
+        let cap = sample(&camera, &image, [0.0, 0.0, z]);
+        assert_ne!(cap, sample(&camera, &background, [0.0, 0.0, z]));
+        for y in [-0.265, 0.265] {
+            let notch = [0.0, y, z];
+            assert_eq!(sample(&camera, &image, notch), sample(&camera, &background, notch), "notch at {notch:?}");
+            for x in [-0.4, 0.4] {
+                assert_eq!(sample(&camera, &image, [x, y, z]), cap, "full-width end");
+            }
+        }
+    }
+    let camera = OrbitCamera { pitch: 0.35, ..camera };
+    let (image, background) = (paint(&scene, camera), paint(&empty, camera));
+    let wall = [0.0, -0.365 * 0.6, 0.0];
+    let side = sample(&camera, &image, wall);
+    assert_ne!(side, sample(&camera, &background, wall), "the recessed wall has height");
+    assert_ne!(side, sample(&camera, &image, [0.0, 0.0, 0.12]), "wall and cap have distinct shading");
 }
 
 #[test]

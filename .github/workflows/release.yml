@@ -43,7 +43,7 @@ jobs:
           toolchain: "1.100.0"
           targets: ${{ matrix.target }}
       - run: cargo build -p pdigger-factory-viz --bin pdigger-factory-viewer --release --locked --target ${{ matrix.target }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Package

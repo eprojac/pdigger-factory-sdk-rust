@@ -205,20 +205,23 @@ struct Face {
 }
 
 impl Face {
-    fn project(vertices: &[V3], camera: &OrbitCamera, rect: Rect, base: Color32, stroke: Stroke) -> Option<Self> {
-        let first = vertices[0];
-        let normal = normalize(cross(sub(vertices[1], first), sub(vertices[vertices.len() - 1], first)));
-        if dot(normal, sub(camera.eye(), first)) <= 0.0 {
+    fn project(
+        vertices: [V3; 4],
+        edges: [bool; 4],
+        camera: &OrbitCamera,
+        rect: Rect,
+        base: Color32,
+        stroke: Stroke,
+    ) -> Option<Self> {
+        let [a, b, _, d] = vertices;
+        let normal = normalize(cross(sub(b, a), sub(d, a)));
+        if dot(normal, sub(camera.eye(), a)) <= 0.0 {
             return None;
         }
-        let mut points = Vec::with_capacity(vertices.len());
-        let mut depth = 0.0;
-        for &vertex in vertices {
-            let (point, z) = camera.project(vertex, rect)?;
-            points.push(point);
-            depth += z;
-        }
-        let perimeter = blunt(&points)?;
+        let [a, b, c, d] = vertices.map(|v| camera.project(v, rect));
+        let projected = [a?, b?, c?, d?];
+        let points = projected.map(|(p, _)| p);
+        let depth = projected.iter().map(|(_, z)| z).sum::<f32>() * 0.25;
         let shade = 0.55 + 0.45 * dot(normal, normalize([0.3, -0.5, 1.0])).abs();
         let fill = Color32::from_rgba_premultiplied(
             (f32::from(base.r()) * shade) as u8,
@@ -226,23 +229,25 @@ impl Face {
             (f32::from(base.b()) * shade) as u8,
             base.a(),
         );
-        let shape = if points.len() == 4 {
-            Shape::convex_polygon(perimeter, fill, stroke)
+        let shape = if edges == [true; 4] {
+            Shape::convex_polygon(blunt(&points)?, fill, stroke)
         } else {
-            // Join opposite sides of the dogbone at each cross-section. Only the perimeter gets a stroke.
-            let n = points.len() as u32;
+            // Adjacent cap strips share their fill edge. Stroke only edges on the stone's perimeter.
             let mut mesh = Mesh::default();
             for p in points {
                 mesh.colored_vertex(p, fill);
             }
-            for i in 0..n / 2 - 1 {
-                let opposite = n - 1 - i;
-                mesh.add_triangle(i, i + 1, opposite);
-                mesh.add_triangle(i + 1, opposite - 1, opposite);
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            let mut shapes = vec![Shape::mesh(mesh)];
+            for (i, outer) in edges.into_iter().enumerate() {
+                if outer {
+                    shapes.push(Shape::line_segment([points[i], points[(i + 1) % 4]], stroke));
+                }
             }
-            Shape::Vec(vec![Shape::mesh(mesh), Shape::closed_line(perimeter, stroke)])
+            Shape::Vec(shapes)
         };
-        Some(Self { depth: depth / vertices.len() as f32, shape })
+        Some(Self { depth, shape })
     }
 }
 
@@ -369,14 +374,20 @@ impl<'a> SceneView<'a> {
         };
         let stroke =
             if lit { Stroke::new(2.0, Color32::WHITE) } else { Stroke::new(1.0, Color32::from_black_alpha(90)) };
-        let mut face = |vertices: &[V3]| out.extend(Face::project(vertices, self.camera, rect, base, stroke));
+        let mut face = |vertices, edges| out.extend(Face::project(vertices, edges, self.camera, rect, base, stroke));
         for i in 0..top.len() {
             let j = (i + 1) % top.len();
-            face(&[bottom[i], bottom[j], top[j], top[i]]);
+            face([bottom[i], bottom[j], top[j], top[i]], [true; 4]);
         }
-        face(&top);
         bottom.reverse(); // outward winding for the underside
-        face(&bottom);
+        for ring in [&top, &bottom] {
+            // Sort each section at its own depth so recessed walls disappear behind the nearer end of a dogbone.
+            let sections = ring.len() / 2 - 1;
+            for i in 0..sections {
+                let j = ring.len() - 1 - i;
+                face([ring[i], ring[i + 1], ring[j - 1], ring[j]], [true, i + 1 == sections, true, i == 0]);
+            }
+        }
     }
 
     fn paint_skeleton(&self, painter: &Painter, rect: Rect) {

@@ -258,6 +258,14 @@ fn dogbone_caps_leave_the_notches_open_and_the_waist_has_a_wall() {
     let side = sample(&camera, &image, wall);
     assert_ne!(side, sample(&camera, &background, wall), "the recessed wall has height");
     assert_ne!(side, sample(&camera, &image, [0.0, 0.0, 0.12]), "wall and cap have distinct shading");
+    // Seen nearly end-on, the far shoulder projects behind the near end of the top face.
+    let camera = OrbitCamera { pitch: 0.28, yaw: 2.86, ..camera };
+    let image = paint(&scene, camera);
+    assert_eq!(
+        sample(&camera, &image, [-0.345, 0.267, 0.12]),
+        sample(&camera, &image, [0.0, 0.0, 0.12]),
+        "a recessed wall must not show through the cap"
+    );
 }
 
 #[test]

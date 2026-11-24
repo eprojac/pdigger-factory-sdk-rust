@@ -1,0 +1,38 @@
+[package]
+name = "pdigger-factory-viz"
+description = "egui visualisation helpers for the pDigger Factory SDK (video-space overlay, 3-D scene, event feed, hand cards) and the pdigger-factory-viewer app, in the Craft look of storytold/texturecraft."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version = "1.95"
+readme = "README.md"
+keywords = ["pdigger", "egui", "visualization", "viewer"]
+categories = ["visualization", "gui"]
+include = ["src/**/*.rs", "src/**/*.json", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md"]
+
+[lib]
+name = "pdigger_factory_viz"
+
+[[bin]]
+name = "pdigger-factory-viewer"
+path = "src/bin/pdigger-factory-viewer.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+pdigger-factory-sdk = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["glow", "default_fonts", "x11", "wayland"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
+futures = { workspace = true }
+flate2 = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+pdigger-factory-sdk = { workspace = true, features = ["testing"] }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "test-util"] }

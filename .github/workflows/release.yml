@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: unit tests in Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the workspace version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          test "v$version" = "$GITHUB_REF_NAME"
+      - run: make test
+
+  viewer:
+    name: viewer binary (${{ matrix.target }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100.0"
+          targets: ${{ matrix.target }}
+      - run: cargo build -p pdigger-factory-viz --bin pdigger-factory-viewer --release --locked --target ${{ matrix.target }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Package
+        shell: bash
+        run: |
+          name="pdigger-factory-viewer-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir "$name"
+          cp LICENSE NOTICE README.md "$name/"
+          # the licences of the crates the binary is built from (NOTICE names this file)
+          python scripts/third-party-licenses.py --target ${{ matrix.target }} > "$name/THIRD-PARTY-LICENSES.txt"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/pdigger-factory-viewer.exe" "$name/"
+            7z a "$name.zip" "$name" > /dev/null
+          else
+            cp "target/${{ matrix.target }}/release/pdigger-factory-viewer" "$name/"
+            tar czf "$name.tar.gz" "$name"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viewer-${{ matrix.target }}
+          # the archives only: the staging folder beside them would reach the release as a folder
+          path: |
+            pdigger-factory-viewer-*.tar.gz
+            pdigger-factory-viewer-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: crates.io and the GitHub release
+    needs: [test, viewer]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100.0"
+      # every check that can fail comes before crates.io, which cannot be undone; what can still fail after the first
+      # upload (the second upload, crates.io's indexing, making the release public) is finished by a re-run, which
+      # skips a crate this tag's commit published already
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: viewer-*
+          merge-multiple: true
+          path: dist
+      - name: The three viewer archives (two .tar.gz, one .zip), files only
+        run: |
+          test -z "$(find dist -mindepth 1 -type d)"
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 2
+          test "$(find dist -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 3
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## " v " " {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
+          test -s notes.md
+      - name: Both crates package and build, the viewer against the SDK as it will be published
+        run: cargo publish --workspace --locked --dry-run
+      - name: A version on crates.io already is this tag's package (a re-run), not other content
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cargo package --workspace --locked --no-verify
+          for crate in pdigger-factory-sdk pdigger-factory-viz; do
+            line=$(curl -sf "https://index.crates.io/pd/ig/$crate" | grep "\"vers\":\"$version\"" || true)
+            sum=$(sha256sum "target/package/$crate-$version.crate" | cut -d' ' -f1)
+            if [ -n "$line" ] && ! echo "$line" | grep -q "\"cksum\":\"$sum\""; then
+              echo "$crate $version on crates.io is not this tag's package"
+              exit 1
+            fi
+          done
+      - name: A draft GitHub release with the viewer binaries (a re-run reuses it)
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish the crates not on crates.io yet (the SDK first; cargo waits up to 60 s for crates.io to index it, in up to 5 passes 30 s apart)
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for pass in 1 2 3 4 5; do
+            missing=""
+            for crate in pdigger-factory-sdk pdigger-factory-viz; do
+              if curl -sf "https://index.crates.io/pd/ig/$crate" | grep -q "\"vers\":\"$version\""; then
+                echo "$crate $version is on crates.io already"
+              else
+                missing="$missing -p $crate"
+              fi
+            done
+            if [ -z "$missing" ] || cargo publish $missing --locked; then exit 0; fi
+            echo "pass $pass: not published yet (crates.io indexes slowly at times); again in 30 s"
+            sleep 30
+          done
+          exit 1
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: The GitHub release goes public
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        env:
+          GH_TOKEN: ${{ github.token }}

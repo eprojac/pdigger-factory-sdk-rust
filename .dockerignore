@@ -1,0 +1,9 @@
+target
+target-*
+.git
+.github
+**/*.profraw
+**/*.profdata
+lcov.info
+recordings
+**/.DS_Store

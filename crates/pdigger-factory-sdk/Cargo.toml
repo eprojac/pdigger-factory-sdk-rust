@@ -1,0 +1,51 @@
+[package]
+name = "pdigger-factory-sdk"
+description = "Rust SDK of the pDigger Factory interpreter API: follow the shared session, typed events, activities and plain-text descriptions of stone work, replays of published recordings, streams, low-level API and codecs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version = "1.88"
+readme = "README.md"
+keywords = ["pdigger", "factory", "interpreter", "sdk", "sse"]
+categories = ["api-bindings", "asynchronous", "computer-vision"]
+include = ["src/**/*.rs", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md"]
+
+[lib]
+name = "pdigger_factory_sdk"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# The `testing` module: FakeFactory (an in-process transport and a local server answering the
+# v2 API from fixture replies or a recording), fault injection, manual clocks.
+testing = ["tokio/net", "tokio/io-util"]
+
+[dependencies]
+tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
+reqwest = { workspace = true, features = ["rustls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+base64 = { workspace = true }
+flate2 = { workspace = true }
+bytes = { workspace = true }
+
+[dev-dependencies]
+pdigger-factory-sdk = { path = ".", features = ["testing"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "test-util", "net", "io-util"] }
+
+[[example]]
+name = "testing_quickstart"
+required-features = ["testing"]
+
+[[example]]
+name = "fake_server"
+required-features = ["testing"]
+
+[package.metadata.docs.rs]
+all-features = true

@@ -1,0 +1,6 @@
+# The toolchain CI and the Docker test image use (rust:1.100.0-bookworm). The core crate builds
+# with Rust 1.88 and later; the viz crate needs 1.95 (egui 0.37).
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+profile = "minimal"

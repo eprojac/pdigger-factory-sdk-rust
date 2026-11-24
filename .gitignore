@@ -1,0 +1,6 @@
+/target
+/target-*
+*.profraw
+*.profdata
+lcov.info
+/recordings/

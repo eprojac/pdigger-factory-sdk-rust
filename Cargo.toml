@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["crates/pdigger-factory-sdk", "crates/pdigger-factory-viz"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/eprojac/pdigger-factory-sdk-rust"
+homepage = "https://factory.pdigger.com/developers/"
+authors = ["eprojac <https://factory.pdigger.com/>"]
+
+[workspace.dependencies]
+pdigger-factory-sdk = { path = "crates/pdigger-factory-sdk", version = "0.1.0" }
+tokio = { version = "1.54", default-features = false }
+reqwest = { version = "0.13", default-features = false }
+serde = { version = "1", features = ["derive"] }
+# raw_value: a look is read by value from its text (spec 4.6.2); float_roundtrip: every number
+# reads as the nearest double, as in the other languages.
+serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
+futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+base64 = "0.23"
+flate2 = "1"
+bytes = "1"
+egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
+eframe = { version = "0.37", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.dev.package."*"]
+opt-level = 1

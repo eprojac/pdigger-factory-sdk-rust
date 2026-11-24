@@ -1,0 +1,67 @@
+name: Integration
+
+# The opt-in tests of TESTING.md: the complete recordings (published at
+# https://factory.pdigger.com/developers/data/) replayed and compared with their summaries, and,
+# when the repository variable PDIGGER_FACTORY_URL names a unit this runner can reach, a
+# read-only check of that unit (observe=1 streams, dry_run=1 controls).
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "A unit to check read-only (empty: the variable PDIGGER_FACTORY_URL, if set)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  DATA: https://factory.pdigger.com/developers/data
+
+jobs:
+  recordings:
+    name: complete recordings
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: Download the complete recordings and their summaries
+        run: |
+          mkdir -p recordings
+          for video in aug28 jul30 dry1 dry2; do
+            curl -fsSL --retry 3 -o "recordings/$video.world.ndjson.gz" "$DATA/$video.world.ndjson.gz"
+            curl -fsSL --retry 3 -o "recordings/$video.summary.json" "$DATA/$video.summary.json" || rm -f "recordings/$video.summary.json"
+            curl -fsSL --retry 3 -o "recordings/$video.summary.txt" "$DATA/$video.summary.txt" || rm -f "recordings/$video.summary.txt"
+          done
+      - name: Replay them
+        run: cargo test -p pdigger-factory-sdk --release --test integration -- --ignored --nocapture the_complete_recordings
+        env:
+          PDIGGER_FACTORY_RECORDINGS: ${{ github.workspace }}/recordings
+
+  unit:
+    name: a unit, read-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PDIGGER_FACTORY_URL: ${{ github.event.inputs.url || vars.PDIGGER_FACTORY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.PDIGGER_FACTORY_URL != ''
+      - uses: dtolnay/rust-toolchain@master
+        if: env.PDIGGER_FACTORY_URL != ''
+        with:
+          toolchain: "1.100.0"
+      - name: Check the unit
+        if: env.PDIGGER_FACTORY_URL != ''
+        run: cargo test -p pdigger-factory-sdk --test integration -- --ignored --nocapture the_unit
+      - name: No unit configured
+        if: env.PDIGGER_FACTORY_URL == ''
+        run: echo "Set the repository variable PDIGGER_FACTORY_URL, or give a URL, to check a unit."

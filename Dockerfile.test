@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+# The unit-test image: pinned toolchain, cargo-llvm-cov, every dependency fetched and compiled at
+# build time, so that `docker run --network none` runs the tests, the 100 % coverage gate, the
+# golden tests and the examples without any network.
+#
+#   docker build -t pdigger-factory-sdk-rust-test -f Dockerfile.test .
+#   docker run --rm --network none pdigger-factory-sdk-rust-test
+#
+# (`make test` does both.)
+FROM rust:1.100.0-bookworm AS toolchain
+# Line tables only (file and line in a backtrace, no variables): the test and example binaries each
+# link every dependency, and with full debug information the image is 13 GB, more than a CI runner's
+# free disk. Set here, the build and `docker run` use the same profile, so nothing is rebuilt.
+ENV CARGO_TERM_COLOR=never \
+    CARGO_INCREMENTAL=0 \
+    CARGO_BUILD_JOBS=4 \
+    CARGO_PROFILE_DEV_DEBUG=line-tables-only
+RUN rustup component add llvm-tools-preview clippy rustfmt \
+ && cargo install cargo-llvm-cov --version 0.9.1 --locked -j 4 \
+ && rm -rf /usr/local/cargo/registry/src /usr/local/cargo/registry/cache
+
+# Dependencies first, with stub sources, so a source change does not rebuild them.
+FROM toolchain AS deps
+WORKDIR /src
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates/pdigger-factory-sdk/Cargo.toml crates/pdigger-factory-sdk/Cargo.toml
+COPY crates/pdigger-factory-viz/Cargo.toml crates/pdigger-factory-viz/Cargo.toml
+COPY scripts/stub-sources.sh scripts/stub-sources.sh
+RUN sh scripts/stub-sources.sh \
+ && cargo fetch --locked \
+ && cargo llvm-cov --workspace --all-targets --locked --no-report -- --list > /dev/null \
+ && cargo build --workspace --examples --all-features --locked
+
+FROM deps AS test
+COPY . .
+# Touch the workspace crates so cargo rebuilds them over the stubs (dependencies stay cached).
+RUN find crates -name '*.rs' -exec touch {} + \
+ && cargo llvm-cov --workspace --all-targets --locked --no-report -- --list > /dev/null \
+ && cargo build --workspace --examples --all-features --locked
+ENV CARGO_NET_OFFLINE=true
+CMD ["sh", "scripts/test.sh"]

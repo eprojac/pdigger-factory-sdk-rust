@@ -1,0 +1,50 @@
+pDigger Factory SDK for Rust (pdigger-factory-sdk, pdigger-factory-viz)
+Copyright 2026 eprojac
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The API description in spec/ and the recorded data in fixtures/ are shared by the four languages of the pDigger
+Factory SDK (Go, Python, Rust, TypeScript). The API a pDigger Factory unit serves is eprojac's; its description in
+spec/ is under the Apache License 2.0 like the rest of this repository. The real recordings come from a pDigger
+Factory test unit or from an offline replay of its model's outputs, and the synthetic ones say so in their headers;
+face keypoints, appearance masks and depth textures are removed from the real ones (see each recording's header).
+crates/pdigger-factory-viz/src/topology.json is the unit's getTopology reply from fixtures/api.
+
+docs/img/architecture.svg and docs/img/architecture.png are the architecture picture shared by the SDK's four languages.
+
+pdigger-factory-viz vendors, with changes, source files of:
+
+  TextureCraft, https://github.com/storytold/texturecraft
+    revision 97f6b819846b40b1f7f5272858f643ca285068b9
+    crates/ui-egui/src/theme.rs -> crates/pdigger-factory-viz/src/craft/theme.rs
+
+  craft-libs (craft-ui), https://github.com/storytold/craft-libs
+    revision 390fe98b0dd3fb84db7c3af7cbd958db4e8cc585
+    crates/ui/src/theme/mod.rs (WidgetPalette) -> crates/pdigger-factory-viz/src/craft/theme.rs
+    crates/ui/src/buttons/mod.rs (IconButton)  -> crates/pdigger-factory-viz/src/craft/buttons.rs
+    crates/ui/src/layout/geometry.rs (split_rect) -> crates/pdigger-factory-viz/src/craft/split.rs
+
+  Copyright (c) 2026 ArtCraft Team and the TextureCraft and craft-libs contributors.
+  Licensed under either of the Apache License, Version 2.0 or the MIT license, at your option
+  (SPDX-License-Identifier: MIT OR Apache-2.0). Each vendored file names its source and its changes in its header.
+
+  The MIT license of those files:
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+    documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+    to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+    the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+    THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+    CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+    IN THE SOFTWARE.
+
+The pdigger-factory-viewer binaries include egui's default fonts (the epaint_default_fonts crate): Ubuntu-Light
+(Ubuntu Font Licence 1.0), Hack (MIT, Bitstream Vera licence), Noto Emoji (SIL Open Font License 1.1), emoji-icon-font
+(MIT) and egui-icons. Their licences, and those of the other crates the viewer is built from, are in
+THIRD-PARTY-LICENSES.txt in each viewer archive (scripts/third-party-licenses.py writes it).

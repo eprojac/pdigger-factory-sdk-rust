@@ -12,7 +12,7 @@ Set the repository secret `CARGO_REGISTRY_TOKEN` to a token that can publish bot
    `Cargo.toml`.
 3. Run `cargo update -w` and include `Cargo.lock` in the release commit. Builds use `--locked`.
 4. Run `make test` and the [recording integration suite](TESTING.md). Commit the release files.
-5. Tag that commit and push the tag. For version 0.1.0, use `git tag v0.1.0` and `git push origin v0.1.0`.
+5. Tag that commit and push the tag. For version 1.0.0, use `git tag v1.0.0` and `git push origin v1.0.0`.
 
 ## What the workflow publishes
 
@@ -26,3 +26,9 @@ intervals, then makes the GitHub release public.
 
 If indexing, the second upload or the final GitHub step fails, choose **Re-run failed jobs** on the same run. The
 workflow reuses the draft and skips matching crate versions already published.
+
+## Publish on GitHub only
+
+Before pushing the tag, set the repository Actions variable `SDK_GITHUB_ONLY_TAG` to the full tag name, including
+the leading `v`. The workflow tests the tag and builds the viewer for all three platforms. Download the three
+`viewer-*` artifacts and attach the archives inside them when you publish the GitHub release.

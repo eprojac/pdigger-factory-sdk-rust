@@ -20,6 +20,10 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           test "v$version" = "$GITHUB_REF_NAME"
+      - name: Disk room for the test image (removes preinstalled SDKs this job does not use)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - run: make test
 
   viewer:
@@ -71,6 +75,7 @@ jobs:
           if-no-files-found: error
 
   publish:
+    if: vars.SDK_GITHUB_ONLY_TAG != github.ref_name
     name: crates.io and the GitHub release
     needs: [test, viewer]
     runs-on: ubuntu-latest

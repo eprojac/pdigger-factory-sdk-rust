@@ -3,7 +3,7 @@
 This SDK follows [semantic versioning](https://semver.org/). The release workflow uses the matching version section
 as its release notes.
 
-## 0.1.0 - Unreleased
+## 1.0.0 - 2026-11-25
 
 Initial SDK for API v2.2. The reference unit ran build `claude-20261123-speckle7` with four recordings and six plant
 cameras. It supplies stone appearance data and surface-pattern comparisons.

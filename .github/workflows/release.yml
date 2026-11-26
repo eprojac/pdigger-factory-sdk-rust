@@ -64,7 +64,7 @@ jobs:
             cp "target/${{ matrix.target }}/release/pdigger-factory-viewer" "$name/"
             tar czf "$name.tar.gz" "$name"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: viewer-${{ matrix.target }}
           # the archives only: the staging folder beside them would reach the release as a folder

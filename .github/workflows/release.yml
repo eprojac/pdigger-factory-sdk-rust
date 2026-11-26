@@ -32,12 +32,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # the Linux viewer comes from viewer-linux below, built against glibc 2.28
+        # the Linux viewer comes from viewer-linux below, built against glibc 2.28, and the Windows viewer from
+        # viewer-windows, with the C runtime linked statically
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -57,20 +56,13 @@ jobs:
           cp LICENSE NOTICE README.md "$name/"
           # the licences of the crates the binary is built from (NOTICE names this file)
           python scripts/third-party-licenses.py --target ${{ matrix.target }} > "$name/THIRD-PARTY-LICENSES.txt"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cp "target/${{ matrix.target }}/release/pdigger-factory-viewer.exe" "$name/"
-            7z a "$name.zip" "$name" > /dev/null
-          else
-            cp "target/${{ matrix.target }}/release/pdigger-factory-viewer" "$name/"
-            tar czf "$name.tar.gz" "$name"
-          fi
+          cp "target/${{ matrix.target }}/release/pdigger-factory-viewer" "$name/"
+          tar czf "$name.tar.gz" "$name"
       - uses: actions/upload-artifact@v7
         with:
           name: viewer-${{ matrix.target }}
-          # the archives only: the staging folder beside them would reach the release as a folder
-          path: |
-            pdigger-factory-viewer-*.tar.gz
-            pdigger-factory-viewer-*.zip
+          # the archive only: the staging folder beside it would reach the release as a folder
+          path: pdigger-factory-viewer-*.tar.gz
           if-no-files-found: error
 
   viewer-linux:
@@ -80,10 +72,17 @@ jobs:
       tag: ${{ github.ref_name }}
       ref: ${{ github.sha }}
 
+  viewer-windows:
+    needs: test
+    uses: ./.github/workflows/viewer-windows.yml
+    with:
+      tag: ${{ github.ref_name }}
+      ref: ${{ github.sha }}
+
   publish:
     if: vars.SDK_GITHUB_ONLY_TAG != github.ref_name
     name: crates.io and the GitHub release
-    needs: [test, viewer, viewer-linux]
+    needs: [test, viewer, viewer-linux, viewer-windows]
     runs-on: ubuntu-latest
     environment: crates-io
     permissions:

@@ -2,8 +2,8 @@ name: Windows viewer
 
 # The Windows viewer archive of a tag, with the C runtime linked statically (-C target-feature=+crt-static), so that the
 # viewer runs without the Visual C++ Redistributable (VCRUNTIME140.dll). The job fails when the binary still imports a
-# C runtime DLL, and runs --help. Run it by hand with a tag to build that tag's archive as an artifact of the run;
-# nothing reaches a release.
+# C runtime DLL, and runs --help. The release workflow calls it for a new tag; run it by hand with a tag to build that
+# tag's archive as an artifact of the run (nothing reaches a release).
 on:
   workflow_call:
     inputs:

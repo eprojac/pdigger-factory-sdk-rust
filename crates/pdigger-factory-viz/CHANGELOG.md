@@ -11,6 +11,11 @@ as its release notes.
   Ubuntu 20.04 and newer. The archives first released with 1.0.0 and 1.0.1 were built on the runner and needed
   glibc 2.43. A new workflow rebuilds a release's Linux archive this way and can replace it on the release
   (RELEASING.md, "The viewer binaries").
+- The Windows viewer archive is built with the C runtime linked statically, so it runs without the Microsoft Visual
+  C++ Redistributable (VCRUNTIME140.dll); the build fails if the binary still imports a C runtime DLL. The archives
+  first released with 1.0.0 and 1.0.1 need that runtime.
+- The docs and both crate READMEs give the git dependencies and `cargo install` lines at the release tag, and no longer
+  say the crates come from crates.io.
 
 ## 1.0.1 - 2026-11-26
 

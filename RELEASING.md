@@ -31,7 +31,10 @@ workflow reuses the draft and skips matching crate versions already published.
 
 ## The viewer binaries
 
-The macOS and Windows viewers are built on the runners. The Linux viewer is built in a manylinux_2_28 container
+The macOS viewer is built on the runner. The Windows viewer is built on the runner with the C runtime linked
+statically ([viewer-windows.yml](.github/workflows/viewer-windows.yml), `-C target-feature=+crt-static`), so it runs
+without the Visual C++ Redistributable; the job fails if the binary still imports a C runtime DLL. The viewers first
+released with 1.0.0 and 1.0.1 for Windows need that runtime. The Linux viewer is built in a manylinux_2_28 container
 ([viewer-linux.yml](.github/workflows/viewer-linux.yml), AlmaLinux 8), so it runs on glibc 2.28 and later (RHEL 8,
 Debian 10, Ubuntu 20.04 and newer). The job fails if the binary needs a newer glibc. None of the binaries is signed or
 notarised.

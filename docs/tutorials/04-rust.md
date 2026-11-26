@@ -38,8 +38,8 @@ scene, the hand cards and the event feed; `[` and `]` jump to the previous and n
 button shows the reports of the trays that left. Its widgets (`OverlayView`, `SceneView`, `EventFeed`, `HandCards`,
 `ReportView`) go into your own egui app, and
 [examples/screenshots.rs](../../crates/pdigger-factory-viz/examples/screenshots.rs) renders them without a window
-([viz.md](../viz.md)). Until the crates are released, install the viewer from this repository:
-`cargo install --git https://github.com/eprojac/pdigger-factory-sdk-rust pdigger-factory-viz`.
+([viz.md](../viz.md)). Install the viewer from this repository at the release tag:
+`cargo install --locked --git https://github.com/eprojac/pdigger-factory-sdk-rust --tag v1.0.1 pdigger-factory-viz`.
 
 ## The fake unit in your tests
 

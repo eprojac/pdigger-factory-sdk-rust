@@ -15,7 +15,7 @@ jobs:
     name: unit tests in Docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: The tag is the workspace version
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
@@ -40,13 +40,13 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.100.0"
           targets: ${{ matrix.target }}
       - run: cargo build -p pdigger-factory-viz --bin pdigger-factory-viewer --release --locked --target ${{ matrix.target }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Package
@@ -64,7 +64,7 @@ jobs:
             cp "target/${{ matrix.target }}/release/pdigger-factory-viewer" "$name/"
             tar czf "$name.tar.gz" "$name"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: viewer-${{ matrix.target }}
           # the archives only: the staging folder beside them would reach the release as a folder
@@ -89,14 +89,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.100.0"
       # every check that can fail comes before crates.io, which cannot be undone; what can still fail after the first
       # upload (the second upload, crates.io's indexing, making the release public) is finished by a re-run, which
       # skips a crate this tag's commit published already
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: viewer-*
           merge-multiple: true

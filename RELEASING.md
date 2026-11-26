@@ -11,6 +11,8 @@ Set the repository secret `CARGO_REGISTRY_TOKEN` to a token that can publish bot
 2. Update `workspace.package.version` and the version of `pdigger-factory-sdk` in `workspace.dependencies` in
    `Cargo.toml`.
 3. Run `cargo update -w` and include `Cargo.lock` in the release commit. Builds use `--locked`.
+   Point the install lines at the new tag: `--tag` and `tag =` in `README.md`, both crate READMEs, `docs/viz.md`,
+   `docs/testing.md` and `docs/tutorials/04-rust.md`.
 4. Run `make test` and the [recording integration suite](TESTING.md). Commit the release files.
 5. Tag that commit and push the tag. For version 1.0.0, use `git tag v1.0.0` and `git push origin v1.0.0`.
 

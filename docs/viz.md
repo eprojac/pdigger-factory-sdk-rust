@@ -6,12 +6,12 @@ and craft-libs. [Third-party credits](../NOTICE).
 
 ```toml
 [dependencies]
-pdigger-factory-viz = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust" }
-pdigger-factory-sdk = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust" }
+pdigger-factory-viz = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust", tag = "v1.0.1" }
+pdigger-factory-sdk = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust", tag = "v1.0.1" }
 egui = "0.37"
 ```
 
-Until the first release the crates come from the repository; from then on, `"0.1"` from crates.io.
+The crates are not on crates.io: take both from this repository at the same release tag.
 
 Run `make pictures` to reproduce the screenshots headlessly. The camera views show frame 1516 of
 `dry1-0296-0306-full` at 5:02.4, when the right hand carries stone 643. The tray report uses `dry1-0018-0153`.

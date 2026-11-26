@@ -31,7 +31,7 @@ jobs:
     env:
       TAG: ${{ inputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || format('refs/tags/{0}', inputs.tag) }}
       - uses: dtolnay/rust-toolchain@master
@@ -58,7 +58,7 @@ jobs:
           /opt/python/cp312-cp312/bin/python scripts/third-party-licenses.py --target x86_64-unknown-linux-gnu > "$name/THIRD-PARTY-LICENSES.txt"
           cp target/x86_64-unknown-linux-gnu/release/pdigger-factory-viewer "$name/"
           tar czf "$name.tar.gz" "$name"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: viewer-x86_64-unknown-linux-gnu
           path: pdigger-factory-viewer-*.tar.gz

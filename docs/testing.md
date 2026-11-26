@@ -7,12 +7,12 @@ loopback HTTP server. See [the SDK test suite](../TESTING.md) for coverage and i
 
 ```toml
 [dev-dependencies]
-pdigger-factory-sdk = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust", features = ["testing"] }
+pdigger-factory-sdk = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust", tag = "v1.0.1", features = ["testing"] }
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
 ```
 
-Until the first release the crate comes from the repository; from then on,
-`pdigger-factory-sdk = { version = "0.1", features = ["testing"] }`.
+The crate is not on crates.io: take it from this repository at a release tag, the same one as your
+`[dependencies]` entry.
 
 `testing::FakeFactory` answers the whole v2 API from a recording and/or recorded replies, with no network and no real
 clock. Its client talks to it in process (`fake.client()`: the fake is the client's `Transport`), or over a real

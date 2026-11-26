@@ -1,0 +1,82 @@
+name: Windows viewer
+
+# The Windows viewer archive of a tag, with the C runtime linked statically (-C target-feature=+crt-static), so that the
+# viewer runs without the Visual C++ Redistributable (VCRUNTIME140.dll). The job fails when the binary still imports a
+# C runtime DLL, and runs --help. Run it by hand with a tag to build that tag's archive as an artifact of the run;
+# nothing reaches a release.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "The tag whose viewer to build, for example v1.0.1 (it names the archive)"
+        required: true
+        type: string
+      ref:
+        description: "The commit to build (default: the tag), so that a release run builds the commit it was started for"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag whose viewer to build, for example v1.0.1 (it names the archive)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: viewer binary (x86_64-pc-windows-msvc, static C runtime)
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || format('refs/tags/{0}', inputs.tag) }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100.0"
+          targets: x86_64-pc-windows-msvc
+      - run: cargo build -p pdigger-factory-viz --bin pdigger-factory-viewer --release --locked --target x86_64-pc-windows-msvc
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+      - name: The viewer imports no C runtime DLL (VCRUNTIME140, MSVCP140, ucrtbase, api-ms-win-crt-*)
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe not found' }
+          $report = & $dumpbin /nologo /dependents target\x86_64-pc-windows-msvc\release\pdigger-factory-viewer.exe
+          $report
+          $dlls = @($report | ForEach-Object { if ($_ -match '^\s+(\S+\.dll)\s*$') { $Matches[1].ToLowerInvariant() } })
+          if ($dlls.Count -eq 0) { throw 'dumpbin listed no DLLs' }
+          $crt = @($dlls | Where-Object { $_ -match '^(vcruntime|msvcp|ucrtbase|api-ms-win-crt-)' })
+          if ($crt.Count -gt 0) { throw "the viewer still imports the C runtime: $($crt -join ', ')" }
+          "the viewer imports $($dlls.Count) DLLs, none of the C runtime: $($dlls -join ', ')"
+      - name: The viewer starts (--help returns before any window opens)
+        shell: bash
+        run: target/x86_64-pc-windows-msvc/release/pdigger-factory-viewer.exe --help
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Package
+        shell: bash
+        run: |
+          name="pdigger-factory-viewer-${TAG}-x86_64-pc-windows-msvc"
+          mkdir "$name"
+          cp LICENSE NOTICE README.md "$name/"
+          # the licences of the crates the binary is built from (NOTICE names this file)
+          python scripts/third-party-licenses.py --target x86_64-pc-windows-msvc > "$name/THIRD-PARTY-LICENSES.txt"
+          cp target/x86_64-pc-windows-msvc/release/pdigger-factory-viewer.exe "$name/"
+          7z a "$name.zip" "$name" > /dev/null
+      - uses: actions/upload-artifact@v7
+        with:
+          name: viewer-x86_64-pc-windows-msvc
+          path: pdigger-factory-viewer-*.zip
+          if-no-files-found: error

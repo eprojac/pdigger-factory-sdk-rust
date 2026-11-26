@@ -3313,15 +3313,21 @@ impl TrayLedger {
     }
 
     fn begin(&mut self, sink: &mut Sink<'_>) {
-        let ids: BTreeSet<i64> = self.stop[0].0.stones.iter().filter(|s| !s.held).map(|s| s.id).collect();
+        let unheld: BTreeSet<i64> = self.stop[0].0.stones.iter().filter(|s| !s.held).map(|s| s.id).collect();
+        let ids: BTreeSet<i64> = self.stop[0].0.stones.iter().filter(|s| !s.held && s.detected).map(|s| s.id).collect();
         let goes_on = self
             .tray
             .as_ref()
-            // a visit continues the open tray only when nearly all (nine tenths) of its first frame's
-            // stones were seen on the tray: a new board under the camera may carry many of the last
-            // board's world ids (spec 4.6.1)
+            // a visit continues the open tray only on the camera's word (spec 4.6.1): at least one of its
+            // first frame's detected stones was seen on the tray, and nine tenths of those detected stones
+            // were, or nine tenths of all its stones that no hand holds (a jolt can leave most of a board's
+            // stones only remembered and rename one of the few the camera sees). A new board under the
+            // camera may carry many of the last board's world ids, and a board that drove off may leave its
+            // stones remembered (not detected) where it stood.
             .is_some_and(|tr| {
-                !ids.is_empty() && 10 * ids.iter().filter(|id| tr.ids.contains(id)).count() >= 9 * ids.len()
+                let seen = ids.iter().filter(|id| tr.ids.contains(id)).count();
+                let seen_all = unheld.iter().filter(|id| tr.ids.contains(id)).count();
+                seen > 0 && (10 * seen >= 9 * ids.len() || 10 * seen_all >= 9 * unheld.len())
             });
         if !goes_on {
             self.close_tray(sink);

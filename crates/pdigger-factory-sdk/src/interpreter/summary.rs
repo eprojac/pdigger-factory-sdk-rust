@@ -128,8 +128,9 @@ pub struct HandTimes {
 }
 
 impl HandTimes {
-    pub(crate) fn from_frames(frames: &[u64; 5]) -> HandTimes {
-        let s = |i: usize| super::text::round3(0.2 * frames[i] as f64);
+    /// The times of the milliseconds summed per state (spec 4.5: each frame with a world adds its step).
+    pub(crate) fn from_ms(ms: &[u64; 5]) -> HandTimes {
+        let s = |i: usize| super::text::round3(ms[i] as f64 / 1000.0);
         HandTimes { free: s(0), touch: s(1), grasp: s(2), hinge: s(3), carry: s(4) }
     }
 
@@ -311,7 +312,7 @@ mod tests {
         let idx: Vec<Option<usize>> = HandStateKind::known().iter().map(HandTimes::index).collect();
         assert_eq!(idx, vec![Some(0), Some(1), Some(2), Some(3), Some(4)]);
         assert_eq!(HandTimes::index(&HandStateKind::Other("wave".into())), None);
-        let t = HandTimes::from_frames(&[1, 2, 3, 4, 5]);
+        let t = HandTimes::from_ms(&[200, 400, 600, 800, 1000]);
         assert_eq!(t.carry, 1.0);
         let s = Summary {
             moves: MoveCounts { mean_duration: Some(4.05), mean_distance: Some(0.385), ..MoveCounts::default() },

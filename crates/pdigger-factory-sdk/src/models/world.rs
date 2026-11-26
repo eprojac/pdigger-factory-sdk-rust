@@ -39,7 +39,8 @@ wire_enum! {
 wire_enum! {
     /// A hand's state in the world.
     HandStateKind {
-        /// Not touching anything.
+        /// No contact at the board: touching nothing, or (with `HandState::away` true) in contact
+        /// away from the board.
         Free = "free",
         /// Touching a stone.
         Touch = "touch",
@@ -313,7 +314,9 @@ impl StoneView {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HandState {
-    /// `free`, `touch`, `grasp`, `hinge` or `carry`.
+    /// `free`, `touch`, `grasp`, `hinge` or `carry`. `touch` and `grasp` are the temporal model's contact readings.
+    /// With fixer thin-v1 (dry videos and cameras), a hand in contact that holds no stone and whose wrist is off the
+    /// board (the regions' tray map) is sent as `free`, with `away` true.
     pub state: HandStateKind,
     /// The stone it holds or touches.
     pub stone: Option<i64>,
@@ -322,6 +325,9 @@ pub struct HandState {
     pub ray_k: Option<f64>,
     /// Untrusted.
     pub untrusted: Option<bool>,
+    /// Present (true) only on a hand sent as `free` because it is in contact away from the board: a worker's hand
+    /// busy beside the board, or a false hand on machinery. It does not hold a stone and does not work on the tray.
+    pub away: Option<bool>,
     /// Unknown fields.
     #[serde(flatten)]
     pub extra: Extra,
@@ -688,5 +694,17 @@ mod tests {
         assert_eq!(e.event.kind, EventKind::Split);
         assert_eq!(e.event.into, Some(vec![4, 9]));
         assert_eq!(serde_json::to_string(&e.event).unwrap(), r#"{"type":"split","id":4,"into":[4,9]}"#);
+    }
+
+    #[test]
+    fn a_hand_away_from_the_board() {
+        // `away` is present (true) only on a hand sent as free because it is in contact away from the board
+        let hand = |s: &str| serde_json::from_str::<HandState>(s);
+        assert_eq!(hand(r#"{"state":"free","stone":null}"#).unwrap().away, None);
+        assert_eq!(hand(r#"{"state":"free","stone":null,"away":true}"#).unwrap().away, Some(true));
+        assert_eq!(hand(r#"{"state":"free","stone":null,"away":false}"#).unwrap().away, Some(false));
+        assert!(hand(r#"{"state":"free","away":"yes"}"#).is_err());
+        let away = hand(r#"{"state":"free","stone":null,"away":true}"#).unwrap();
+        assert!(serde_json::to_string(&away).unwrap().contains(r#""away":true"#));
     }
 }

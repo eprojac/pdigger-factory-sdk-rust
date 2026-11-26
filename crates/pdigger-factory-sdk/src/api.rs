@@ -311,7 +311,8 @@ pub struct Picture {
     /// The frame's grid index (the reply's `X-Interp-G`: the frame `latest` was).
     pub g: i64,
     /// The JPEG (640 × 360 on the plant rigs; the layers' native pixels are this picture
-    /// stretched to `native_wh`).
+    /// scaled to fit `native_wh` and centred, the rest black: a picture of another shape is
+    /// letterboxed, from worker `claude-20261125-dspad1` on; earlier workers stretched it).
     pub jpeg: Bytes,
 }
 

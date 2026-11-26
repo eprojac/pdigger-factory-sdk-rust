@@ -174,7 +174,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Appended to the user agent: `pdigger-factory-sdk-rust/1.0.0 <suffix>`.
+    /// Appended to the user agent: `pdigger-factory-sdk-rust/<version> <suffix>`, with this crate's version.
     pub fn user_agent_suffix(mut self, suffix: impl Into<String>) -> Self {
         self.user_agent_suffix = Some(suffix.into());
         self

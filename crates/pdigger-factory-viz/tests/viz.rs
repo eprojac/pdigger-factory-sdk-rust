@@ -934,12 +934,21 @@ fn the_viewer_jumps_between_tray_points() {
     let path = fixtures().join("recordings/trays-synthetic.ndjson.gz");
     let mut app = ViewerApp::from_replay("trays", Replay::open(&path).unwrap()).unwrap();
     let points: Vec<(i64, bool, i64)> = app.tray_marks().iter().map(|m| (m.tray, m.arrived, m.at.g)).collect();
-    // tray 4 never arrives; tray 7 leaves with the final update, at its leaving point (g 181, the last frame)
+    // tray 4 never arrives; tray 8 leaves with the final update, at its leaving point (g 203, the last frame)
     let want = [(1, true, 4), (1, false, 26), (2, true, 32), (2, false, 67), (3, true, 73), (3, false, 98)];
     assert_eq!(points[..6], want);
     assert_eq!(
         points[6..],
-        [(5, true, 120), (5, false, 136), (6, true, 145), (6, false, 166), (7, true, 175), (7, false, 181)]
+        [
+            (5, true, 120),
+            (5, false, 136),
+            (6, true, 145),
+            (6, false, 166),
+            (7, true, 175),
+            (7, false, 181),
+            (8, true, 196),
+            (8, false, 203)
+        ]
     );
     app.seek(0);
     let first = app.next_tray_point().unwrap();
@@ -957,8 +966,8 @@ fn the_viewer_jumps_between_tray_points() {
     assert_eq!(press(egui::Key::PageUp), 4);
     app.seek(app.len() - 1);
     assert!(app.next_tray_point().is_none(), "none after the last");
-    // the last frame is tray 7's leaving point itself: the point before it is tray 7's arrival
-    assert_eq!(app.previous_tray_point().map(|m| (m.tray, m.arrived)), Some((7, true)));
+    // the last frame is tray 8's leaving point itself: the point before it is tray 8's arrival
+    assert_eq!(app.previous_tray_point().map(|m| (m.tray, m.arrived)), Some((8, true)));
     app.seek(0);
     assert!(app.previous_tray_point().is_none(), "none before the first");
     // a point whose frame the viewer does not hold is left out: here tray 1's leaving point (g 26)
@@ -966,7 +975,10 @@ fn the_viewer_jumps_between_tray_points() {
     let held = ViewerApp::from_updates("trays", updates.filter(|u| u.frame.as_ref().is_none_or(|f| f.g != 26)));
     let points: Vec<(i64, bool)> = held.tray_marks().iter().map(|m| (m.tray, m.arrived)).collect();
     assert_eq!(points[..5], [(1, true), (2, true), (2, false), (3, true), (3, false)]);
-    assert_eq!(points[5..], [(5, true), (5, false), (6, true), (6, false), (7, true), (7, false)]);
+    assert_eq!(
+        points[5..],
+        [(5, true), (5, false), (6, true), (6, false), (7, true), (7, false), (8, true), (8, false)]
+    );
 }
 
 /// The trays that left, by number.
@@ -981,7 +993,7 @@ fn the_viewer_shows_the_reports_of_the_trays_that_left() {
     let path = fixtures().join("recordings/trays-synthetic.ndjson.gz");
     let mut app = ViewerApp::from_replay("trays", Replay::open(&path).unwrap()).unwrap();
     // tray 4 never arrived: no report
-    assert_eq!(numbers(&app), [1, 2, 3, 5, 6, 7]);
+    assert_eq!(numbers(&app), [1, 2, 3, 5, 6, 7, 8]);
     assert!(app.trays().iter().all(|t| t.report().is_some()));
     assert_eq!((app.report_index(), app.report_view()), (None, None), "the four views");
     let mut h = Harness::new(1280.0, 720.0);
@@ -1018,7 +1030,7 @@ fn the_viewer_shows_the_reports_of_the_trays_that_left() {
     assert_eq!(app.report_index(), Some(0));
     // past the last tray: the last one; fewer trays: the last of those
     app.show_report(Some(99));
-    assert_eq!(app.report_index(), Some(5));
+    assert_eq!(app.report_index(), Some(6));
     app.set_trays(Replay::open(&path).unwrap().trays().unwrap().into_iter().take(2).collect());
     assert_eq!((numbers(&app), app.report_index()), (vec![1, 2], Some(1)));
     // none: the panel says so
@@ -1108,18 +1120,18 @@ fn the_viewer_lists_the_trays_of_a_recording_url_and_of_a_unit() {
         assert_eq!(app.current().unwrap().update, file.current().unwrap().update, "step {i}");
     }
     rt.block_on(server.shutdown());
-    // a unit: its trays as they leave (tray 7, the last, leaves only when the frames end)
+    // a unit: its trays as they leave (tray 8, the last, leaves only when the frames end)
     let path = fixtures().join("recordings/trays-synthetic.ndjson.gz");
     let frames = Replay::open(&path).unwrap().frames().count();
     let fake = FakeFactory::from_recording(&path).unwrap();
     let server = rt.block_on(fake.serve()).unwrap();
     let (_, mut live) = ViewerApp::open(&ViewerInput::Server(server.url().to_string())).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
-    while (live.len() < frames || live.trays().len() < 5) && std::time::Instant::now() < deadline {
+    while (live.len() < frames || live.trays().len() < 6) && std::time::Instant::now() < deadline {
         live.poll_live();
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(numbers(&live), [1, 2, 3, 5, 6]);
+    assert_eq!(numbers(&live), [1, 2, 3, 5, 6, 7]);
     live.show_report(Some(2));
     assert_eq!(live.report_view().unwrap().report().tray, 3);
     drop(live);

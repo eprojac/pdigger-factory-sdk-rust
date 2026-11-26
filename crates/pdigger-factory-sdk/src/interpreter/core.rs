@@ -127,7 +127,11 @@ pub struct InterpreterCore {
     dur_n: u64,
     dist_sum: f64,
     dist_n: u64,
-    hand_frames: [[u64; 5]; 2],
+    /// Milliseconds per hand and state: each new frame with a world adds its step ([`hand_step`]).
+    hand_ms: [[u64; 5]; 2],
+    /// The session's previous new frame (`g`, `t`, its step), for the steps, and the newest frame's step.
+    step_prev: Option<(i64, f64, u64)>,
+    step_ms: u64,
     /// Each stone's track, with when it last moved (on `track_clock`).
     tracks: HashMap<i64, (u64, Vec<TrackPoint>)>,
     track_clock: u64,
@@ -265,6 +269,7 @@ impl InterpreterCore {
             // The first frame of a session is always a new grid frame (`prev_g` is reset).
             self.session_first_t = t;
             self.prev_g = None;
+            self.step_prev = None;
         } else if self.prev_g.is_some_and(|prev| g <= prev) {
             // An already seen grid frame: a revision (a higher world.rev) or a duplicate (dropped).
             let Some(w) = w.filter(|_| self.revs.get(&g).is_some_and(|&seen| rev > seen)) else {
@@ -308,6 +313,8 @@ impl InterpreterCore {
             self.ledger.skipped();
         }
         self.prev_g = Some(g);
+        self.step_ms = hand_step(self.step_prev, g, t);
+        self.step_prev = Some((g, t, self.step_ms));
         self.session_last_t = t;
         self.g = Some(g);
         self.t = Some(t);
@@ -350,7 +357,7 @@ impl InterpreterCore {
         self.summary.stones.confirmed_last = Some(w.stats.confirmed);
         for (side, hand) in [&w.hands.left, &w.hands.right].into_iter().enumerate() {
             if let Some(i) = HandTimes::index(&hand.state) {
-                self.hand_frames[side][i] += 1;
+                self.hand_ms[side][i] += self.step_ms;
             }
         }
         let now = self.time_ref(f);
@@ -687,10 +694,8 @@ impl InterpreterCore {
         if self.dist_n > 0 {
             s.moves.mean_distance = Some(round3(self.dist_sum / self.dist_n as f64));
         }
-        s.hands = HandsTimes {
-            left: HandTimes::from_frames(&self.hand_frames[0]),
-            right: HandTimes::from_frames(&self.hand_frames[1]),
-        };
+        s.hands =
+            HandsTimes { left: HandTimes::from_ms(&self.hand_ms[0]), right: HandTimes::from_ms(&self.hand_ms[1]) };
         s.media_seconds = round3(s.media_seconds);
         s.first_t = s.first_t.map(round3);
         s.last_t = s.last_t.map(round3);
@@ -787,9 +792,79 @@ impl HandsView {
     }
 }
 
+/// The milliseconds a new frame adds to its hands' states (spec 4.5): the media time since the session's previous
+/// new frame `(g_prev, t_prev, step_prev)` when that frame is the grid step before it (`g == g_prev + 1`), in whole
+/// milliseconds, half up, when that is at least 1 ms and below 2^31 ms; otherwise the session's previous step (a frame
+/// after a gap, a `t` not after the previous one or not a finite number), and 200 (one grid frame of a recorded video)
+/// for a session's first frame.
+pub(crate) fn hand_step(prev: Option<(i64, f64, u64)>, g: i64, t: f64) -> u64 {
+    let Some((pg, pt, step)) = prev else { return 200 };
+    if pg.checked_add(1) == Some(g) {
+        let x = (t - pt) * 1000.0 + 0.5;
+        if (1.0..2_147_483_648.0).contains(&x) {
+            return x.floor() as u64;
+        }
+    }
+    step
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_frame_steps_by_its_media_time_after_the_grid_frame_before_it_else_by_the_previous_step() {
+        assert_eq!(hand_step(None, 5, 1.0), 200); // a session's first frame
+        assert_eq!(hand_step(Some((4, 0.8, 200)), 5, 1.1), 300);
+        assert_eq!(hand_step(Some((4, 0.8, 250)), 6, 1.1), 250); // after a gap
+        assert_eq!(hand_step(Some((4, 0.8, 250)), 5, f64::NAN), 250);
+        assert_eq!(hand_step(Some((4, f64::NAN, 250)), 5, 1.0), 250);
+        assert_eq!(hand_step(Some((4, 0.8, 250)), 5, f64::INFINITY), 250);
+        assert_eq!(hand_step(Some((4, f64::NEG_INFINITY, 250)), 5, 1.0), 250);
+        assert_eq!(hand_step(Some((4, 1.0, 250)), 5, 1.0), 250); // a t not after the previous one
+        assert_eq!(hand_step(Some((4, 1.0, 250)), 5, 0.5), 250);
+        assert_eq!(hand_step(Some((4, 1.0, 250)), 5, 1.0004), 250); // below 1 ms
+        assert_eq!(hand_step(Some((4, 1.0, 250)), 5, 1.0006), 1);
+        assert_eq!(hand_step(Some((4, 0.0, 250)), 5, 2147483.6), 2147483600);
+        assert_eq!(hand_step(Some((4, 0.0, 250)), 5, 2147483.7), 250); // 2^31 ms or more
+        assert_eq!(hand_step(Some((4, -1e308, 250)), 5, 1e308), 250); // the difference overflows
+        assert_eq!(hand_step(Some((i64::MAX, 1.0, 250)), i64::MIN, 1.1), 250); // no wrap-around
+    }
+
+    #[test]
+    fn hand_times_follow_the_cameras_steps() {
+        // a plant camera: g counts the frames its worker released, 0.3 s apart (then 0.31 s, a frame without a
+        // world, 0.24 s); the same frame again adds nothing; after a gap (two frames the unit skipped, 8.81 s) a frame
+        // adds the session's previous step, 0.24 s; a new session's first frame adds one grid frame, 0.2 s, and
+        // after a gap the previous step again
+        let frame = |session: i64, g: i64, t: f64, left: Option<&str>| -> Frame {
+            let mut f = serde_json::json!({"cursor": g + 1, "session": session, "video": "v", "g": g, "t": t});
+            if let Some(left) = left {
+                f["world"] = serde_json::json!({"rev": 0, "motion": "static", "events": [], "stones": [],
+                    "hands": {"left": {"state": left, "stone": null}, "right": {"state": "free", "stone": null}}});
+            }
+            serde_json::from_value(f).unwrap()
+        };
+        let mut core = InterpreterCore::new();
+        for (session, g, t, left) in [
+            (1, 100, 30.0, Some("grasp")),
+            (1, 101, 30.3, Some("grasp")),
+            (1, 102, 30.61, Some("free")),
+            (1, 103, 30.95, None),
+            (1, 104, 31.19, Some("grasp")),
+            (1, 104, 31.19, Some("free")),
+            (1, 107, 40.0, Some("grasp")),
+            (2, 7, 1.4, Some("grasp")),
+            (2, 9, 1.8, Some("grasp")),
+        ] {
+            core.feed(frame(session, g, t, left));
+        }
+        let s = core.summary();
+        assert_eq!(
+            (s.hands.left.grasp, s.hands.left.free, s.hands.right.free, s.media_seconds),
+            (1.38, 0.31, 1.69, 10.4)
+        );
+    }
 
     /// A still frame of three bricks (`rev` 0 for a new frame).
     fn still(g: i64, rev: i64, events: serde_json::Value) -> Frame {

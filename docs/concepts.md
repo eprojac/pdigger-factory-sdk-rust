@@ -18,7 +18,7 @@ http://factory-orin.local:8120/api/v2/      the API root (the SDK's base URL is 
 `FactoryClient::new(base_url)` makes a client; `FactoryClient::builder(base_url)` sets timeouts (10 s per request,
 5 s to connect), retries (3), the backoff, extra headers, a bearer token, the user agent's suffix, the transport, the
 clock and the random source. The docs use `http://factory-orin.local:8120`; the SDK's integration tests read
-`PDIGGER_FACTORY_URL`. Requests carry the user agent `pdigger-factory-sdk-rust/1.0.0`.
+`PDIGGER_FACTORY_URL`. Requests carry the user agent `pdigger-factory-sdk-rust/1.0.1`.
 
 ## The shared session
 

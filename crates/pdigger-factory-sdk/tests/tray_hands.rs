@@ -1,6 +1,7 @@
 //! Version 4 of the tray rules (SDK-DESIGN.md 4.6.1): a certain removal needs a hand on the stone,
-//! and a visit continues the open tray only when nine tenths of its first frame's stones were seen
-//! on it.
+//! and a visit continues the open tray only on the camera's word: of the stones no hand holds at
+//! its first frame, the tray saw one the world detects, and nine tenths of the detected ones or of
+//! them all.
 
 use pdigger_factory_sdk::{Frame, InterpreterCore, Tray, TrayFactKind, TrayStoneStatus};
 use serde_json::{Value, json};
@@ -164,4 +165,126 @@ fn a_visit_with_fewer_than_nine_tenths_of_its_stones_seen_is_a_new_tray() {
     let on: Vec<usize> =
         trays.iter().map(|t| t.stones.iter().filter(|s| s.status == TrayStoneStatus::On).count()).collect();
     assert_eq!(on, [10, 10]);
+}
+
+/// Ten stones arrive; the conveyor moves; the next stop's first frame shows seven of them where they
+/// stood, detected or only remembered, and the world loses them one after another.
+fn drove_off(detected: bool) -> Vec<Tray> {
+    let first: Vec<Value> = (0..10).map(|i| stone(i, -0.9 + 0.2 * i as f64)).collect();
+    let mut steps: Vec<Step> = (0..12).map(|_| step(first.clone())).collect();
+    for _ in 0..3 {
+        steps.push(Step { moving: true, ..step(first.clone()) });
+    }
+    let mut left: Vec<Value> = first[3..]
+        .iter()
+        .map(|s| {
+            let mut s = s.clone();
+            s["detected"] = json!(detected);
+            s
+        })
+        .collect();
+    steps.extend((0..2).map(|_| step(left.clone())));
+    for i in 3..10 {
+        left.remove(0);
+        steps.push(Step { events: vec![json!({"type": "delete", "id": i, "why": "absent"})], ..step(left.clone()) });
+    }
+    steps.extend((0..10).map(|_| step(left.clone())));
+    play(steps)
+}
+
+#[test]
+fn a_visit_whose_first_frame_only_remembers_the_trays_stones_is_a_new_tray() {
+    // a board that drove off: the stones the world remembers where it stood say nothing about the belt
+    let trays = drove_off(false);
+    assert_eq!(trays.iter().map(|t| t.n).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(trays[0].stones.iter().filter(|s| s.status == TrayStoneStatus::On).count(), 10);
+    assert!(!trays[0].facts.iter().any(|f| matches!(f.kind, TrayFactKind::Removed | TrayFactKind::Added)));
+}
+
+#[test]
+fn a_visit_whose_first_frame_detects_the_trays_stones_goes_on_as_the_same_tray() {
+    let trays = drove_off(true);
+    assert_eq!(trays.iter().map(|t| t.n).collect::<Vec<_>>(), [1]);
+    assert_eq!(trays[0].stones.iter().filter(|s| s.status == TrayStoneStatus::Removed).count(), 10);
+    let removals: Vec<_> = trays[0].facts.iter().filter(|f| f.kind == TrayFactKind::Removed).collect();
+    assert!(!removals.is_empty() && removals.iter().all(|f| f.certain == Some(false)));
+}
+
+/// Ten stones arrive; the conveyor jolts; the next stop's first frame shows `kept` of them only
+/// remembered (not detected) and the next `detected` of them detected where they stood, `fresh`
+/// detected stones with ids the tray never saw (a rename, or another board's), `unknown`
+/// remembered ids it never saw and `held` detected stones it never saw in a hand (mode `carry`,
+/// gone after that frame); after it the world detects them all.
+fn jolt(kept: i64, detected: i64, fresh: i64, unknown: i64, held: i64) -> Vec<Tray> {
+    let first: Vec<Value> = (0..10).map(|i| stone(i, -0.9 + 0.2 * i as f64)).collect();
+    let mut steps: Vec<Step> = (0..12).map(|_| step(first.clone())).collect();
+    for _ in 0..3 {
+        steps.push(Step { moving: true, ..step(first.clone()) });
+    }
+    let mut next: Vec<Value> = (0..kept + detected)
+        .map(|i| {
+            let mut s = stone(i, -0.9 + 0.2 * i as f64);
+            s["detected"] = json!(i >= kept);
+            s
+        })
+        .collect();
+    next.extend((0..fresh).map(|k| stone(100 + k, -0.9 + 0.2 * (kept + detected + k) as f64)));
+    next.extend((0..unknown).map(|k| {
+        let mut s = stone(200 + k, -0.9 + 0.2 * k as f64);
+        s["solid"]["pos"][1] = json!(0.4);
+        s["detected"] = json!(false);
+        s
+    }));
+    let mut in_hand = next.clone();
+    in_hand.extend((0..held).map(|k| {
+        let mut s = stone(300 + k, -0.9 + 0.2 * k as f64);
+        s["solid"]["pos"][1] = json!(-0.4);
+        s["mode"] = json!("carry");
+        s
+    }));
+    steps.push(Step { events: (0..fresh).map(|k| json!({"type": "new", "id": 100 + k})).collect(), ..step(in_hand) });
+    let all: Vec<Value> = next
+        .iter()
+        .map(|s| {
+            let mut s = s.clone();
+            s["detected"] = json!(true);
+            s
+        })
+        .collect();
+    steps.extend((0..11).map(|_| step(all.clone())));
+    play(steps)
+}
+
+fn numbers(trays: &[Tray]) -> Vec<i64> {
+    trays.iter().map(|t| t.n).collect()
+}
+
+#[test]
+fn a_visit_goes_on_when_its_detected_stones_were_seen_whatever_else_it_remembers() {
+    // nine detected tray stones and two remembered ids the tray never saw: all the detected stones were seen
+    assert_eq!(numbers(&jolt(0, 9, 0, 2, 0)), [1]);
+}
+
+#[test]
+fn a_visit_whose_only_detected_stone_is_new_is_a_new_tray_however_many_it_remembers() {
+    // nine remembered tray stones and one detected stone the tray never saw: no detected stone says it is the same board
+    assert_eq!(numbers(&jolt(9, 0, 1, 0, 0)), [1, 2]);
+}
+
+#[test]
+fn a_jolt_that_leaves_most_stones_remembered_and_renames_one_it_sees_goes_on() {
+    // two of the three detected stones were seen (less than nine tenths), but nine of all ten were: the same board
+    assert_eq!(numbers(&jolt(7, 2, 1, 0, 0)), [1]);
+}
+
+#[test]
+fn a_visit_with_few_of_its_stones_seen_is_a_new_tray_although_some_were_detected() {
+    // two of the four detected stones and two of all ten were seen
+    assert_eq!(numbers(&jolt(0, 2, 2, 6, 0)), [1, 2]);
+}
+
+#[test]
+fn a_visit_leaves_out_the_stones_a_hand_holds() {
+    // nine detected tray stones and two held stones the tray never saw: only the nine count, and all were seen
+    assert_eq!(numbers(&jolt(0, 9, 0, 0, 2)), [1]);
 }

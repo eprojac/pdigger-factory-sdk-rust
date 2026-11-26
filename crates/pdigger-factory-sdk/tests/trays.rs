@@ -48,7 +48,7 @@ fn numbers(trays: &[pdigger_factory_sdk::Tray]) -> Vec<i64> {
 #[test]
 fn a_tray_as_values() {
     let trays = Replay::open(recording(SYNTH)).unwrap().trays().unwrap();
-    assert_eq!(numbers(&trays), [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(numbers(&trays), [1, 2, 3, 4, 5, 6, 7, 8]);
     let first = &trays[0];
     assert_eq!(first.window(), Some((0.8, 5.2)));
     let never = &trays[3]; // a stop that never settled
@@ -235,7 +235,7 @@ fn events_name_their_tray_stone_and_the_state_its_tray() {
     assert_eq!(seen["confirm 2"].as_deref(), Some("20261118T000000.8Z-1-2")); // frame 13: 2 still stood for it
     assert_eq!(seen["confirm 7"], None); // frame 26, still the newest, set 7 down: none before it
     assert_eq!(seen["confirm 17"], None); // frame 58, whose rename linked 17
-    assert_eq!(trays.into_iter().collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(trays.into_iter().collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6, 7, 8]);
     core.end();
     assert!(core.state().tray.is_none());
 }
@@ -251,19 +251,19 @@ fn the_core_keeps_the_newest_trays() {
         }
         last = numbers(&core.trays());
     });
-    assert_eq!(last, [5, 6, 7]); // tray 7 is on, after the 2 newest that have left
+    assert_eq!(last, [6, 7, 8]); // tray 8 is on, after the 2 newest that have left
     core.end();
-    assert_eq!(numbers(&core.trays()), [6, 7]);
+    assert_eq!(numbers(&core.trays()), [7, 8]);
     let mut one = InterpreterCore::new();
     one.keep_trays(1);
     feed(&mut one, true, |_, _| {});
     one.end();
-    assert_eq!(numbers(&one.trays()), [7]);
+    assert_eq!(numbers(&one.trays()), [8]);
     let mut all = InterpreterCore::new();
     all.keep_trays(0);
     feed(&mut all, true, |_, _| {});
-    assert_eq!(numbers(&all.trays()), [1, 2, 3, 4, 5, 6, 7]);
-    assert_eq!(all.state().tray.map(|t| t.n), Some(7)); // tray 7 is still on
+    assert_eq!(numbers(&all.trays()), [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(all.state().tray.map(|t| t.n), Some(8)); // tray 8 is still on
 }
 
 #[test]
@@ -280,8 +280,8 @@ async fn the_interpreter_streams_tray_facts() {
     let fake = recording_fake(SYNTH);
     let interpreter = fake.client().interpreter().resume(false);
     let facts: Vec<TrayFact> = interpreter.tray_facts().map(Result::unwrap).collect().await;
-    assert_eq!(text(&facts), golden()); // the stream's end makes tray 7 leave, as a replay's does
-    assert_eq!(numbers(&interpreter.trays()), [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(text(&facts), golden()); // the stream's end makes tray 8 leave, as a replay's does
+    assert_eq!(numbers(&interpreter.trays()), [1, 2, 3, 4, 5, 6, 7, 8]);
     let last = interpreter.end();
     assert!(last.is_final && last.tray_facts.is_empty(), "the stream's end made the last tray leave");
 }
@@ -314,7 +314,7 @@ fn a_summary_without_trays_reads_as_zeros() {
     let mut json = summary.to_json();
     assert_eq!(
         json["trays"],
-        json!({"total": 7, "arrived": 6, "stones": 33, "added": 2, "added_unclear": 1, "removed": 1,
+        json!({"total": 8, "arrived": 7, "stones": 33, "added": 2, "added_unclear": 1, "removed": 1,
                "removed_unclear": 2, "unsure": 5})
     );
     json.as_object_mut().unwrap().remove("trays"); // a summary published before trays were counted

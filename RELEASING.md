@@ -27,6 +27,21 @@ intervals, then makes the GitHub release public.
 If indexing, the second upload or the final GitHub step fails, choose **Re-run failed jobs** on the same run. The
 workflow reuses the draft and skips matching crate versions already published.
 
+## The viewer binaries
+
+The macOS and Windows viewers are built on the runners. The Linux viewer is built in a manylinux_2_28 container
+([viewer-linux.yml](.github/workflows/viewer-linux.yml), AlmaLinux 8), so it runs on glibc 2.28 and later (RHEL 8,
+Debian 10, Ubuntu 20.04 and newer). The job fails if the binary needs a newer glibc. None of the binaries is signed or
+notarised.
+
+To rebuild an existing release's Linux archive, run the workflow **Rebuild a release's Linux viewer**
+([viewer-linux-rebuild.yml](.github/workflows/viewer-linux-rebuild.yml)) with the tag. It builds the archive the same
+way and uploads it over the one on that release. With **replace** off it only builds: the archive stays the run's
+artifact `viewer-x86_64-unknown-linux-gnu`. To check that archive before it reaches the release, download it with
+`gh run download <run id> -n viewer-x86_64-unknown-linux-gnu` and upload that file with
+`gh release upload <tag> pdigger-factory-viewer-<tag>-x86_64-unknown-linux-gnu.tar.gz --clobber`. A second run would
+build it again. The Linux archives first released with 1.0.0 and 1.0.1 were built on the runner and needed glibc 2.43.
+
 ## Publish on GitHub only
 
 Before pushing the tag, set the repository Actions variable `SDK_GITHUB_ONLY_TAG` to the full tag name, including

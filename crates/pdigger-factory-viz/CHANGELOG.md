@@ -3,6 +3,15 @@
 This SDK follows [semantic versioning](https://semver.org/). The release workflow uses the matching version section
 as its release notes.
 
+## Unreleased
+
+### Fixed
+
+- The Linux viewer archive is built against glibc 2.28 in a manylinux_2_28 container, so it runs on RHEL 8, Debian 10,
+  Ubuntu 20.04 and newer. The archives first released with 1.0.0 and 1.0.1 were built on the runner and needed
+  glibc 2.43. A new workflow rebuilds a release's Linux archive this way and can replace it on the release
+  (RELEASING.md, "The viewer binaries").
+
 ## 1.0.1 - 2026-11-26
 
 This patch release also adds a public field, `HandState.away`; by Semantic Versioning a release that adds API is a minor

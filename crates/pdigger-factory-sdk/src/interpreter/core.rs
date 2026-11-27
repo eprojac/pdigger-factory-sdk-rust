@@ -39,10 +39,20 @@ pub struct TrackPoint {
     pub pos: [f64; 3],
 }
 
-type EventKey = (EventKind, Option<i64>, Option<Side>, Option<Vec<i64>>);
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum EventKey {
+    World(EventKind, Option<i64>, Option<Side>, Option<Vec<i64>>),
+    Sheet(Option<String>, Vec<i64>),
+}
 
 fn event_key(e: &WorldEvent) -> EventKey {
-    (e.kind.clone(), e.id, e.side.clone(), e.into.clone())
+    if e.kind == EventKind::Sheet {
+        let mut ids = e.ids.clone().unwrap_or_default();
+        ids.sort_unstable();
+        ids.dedup();
+        return EventKey::Sheet(e.why.clone(), ids);
+    }
+    EventKey::World(e.kind.clone(), e.id, e.side.clone(), e.into.clone())
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +158,17 @@ impl InterpreterCore {
     /// A core with no state.
     pub fn new() -> InterpreterCore {
         InterpreterCore::default()
+    }
+
+    /// Set the tray rectangle in native pixels, ordered left, top, right, bottom. Pass `None` for the full frame.
+    pub fn set_tray_bounds(&mut self, bounds: Option<[f64; 4]>) -> Result<(), &'static str> {
+        if let Some(b) = bounds
+            && (!b.iter().all(|v| v.is_finite()) || b[0] >= b[2] || b[1] >= b[3])
+        {
+            return Err("tray bounds must be a finite rectangle with positive width and height");
+        }
+        self.ledger.bounds = bounds;
+        Ok(())
     }
 
     /// A clock state (a stream's `clock` event, a recording's clock line, `getSession`): the
@@ -377,10 +398,11 @@ impl InterpreterCore {
     }
 
     /// Makes the open tray leave and puts `next` in the ledger's place; returns the facts.
-    fn close_trays(&mut self, next: TrayLedger) -> Vec<TrayFact> {
+    fn close_trays(&mut self, mut next: TrayLedger) -> Vec<TrayFact> {
         let mut facts = Vec::new();
         self.ledger.close(&mut Sink { counts: &mut self.summary.trays, facts: &mut facts });
         self.keep_trays_left();
+        next.bounds = self.ledger.bounds;
         self.ledger = next;
         facts
     }
@@ -476,6 +498,7 @@ impl InterpreterCore {
             hand: e.side.clone(),
             why: e.why.clone(),
             into: e.into.clone(),
+            ids: e.ids.clone(),
             source: e.source.clone(),
             stone: w.stones.iter().find(|s| Some(s.id) == e.id).cloned(),
             tray_stone: e.id.and_then(|id| links.get(&id).cloned()),

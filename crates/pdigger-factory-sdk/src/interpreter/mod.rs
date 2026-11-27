@@ -58,6 +58,9 @@ pub struct TimeRef {
 /// What the world says happened in a frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {
+    /// The world IDs affected by a sheet action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<i64>>,
     /// The type (`lift`, `place`, ...).
     #[serde(rename = "type")]
     pub kind: EventKind,
@@ -97,6 +100,7 @@ impl Event {
             side: self.hand.as_ref(),
             why: self.why.as_deref(),
             into: self.into.as_deref(),
+            ids: self.ids.as_deref(),
             source: self.source.as_deref(),
         })
     }

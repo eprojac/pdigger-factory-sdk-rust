@@ -20,8 +20,8 @@ use crate::transport::{Body, Headers, Method, Request, Response};
 
 const LAYERS: [&str; 5] = ["raw", "overlay", "scene", "cards", "world"];
 const DEFAULT_LAYERS: [&str; 4] = ["overlay", "scene", "cards", "world"];
-const EVENT_TYPES: [&str; 12] =
-    ["new", "confirm", "freeze", "push", "lift", "hinge", "carry", "place", "drop", "gone", "delete", "split"];
+const EVENT_TYPES: [&str; 13] =
+    ["new", "confirm", "freeze", "push", "lift", "hinge", "carry", "place", "drop", "gone", "delete", "split", "sheet"];
 /// What a recording answers: without one, a recorded reply answers these (else the empty session does; the long
 /// poll and the streams have nothing to send).
 const FROM_FRAMES: [&str; 9] = [

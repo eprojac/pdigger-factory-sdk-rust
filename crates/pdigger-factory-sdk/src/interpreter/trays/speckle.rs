@@ -270,8 +270,15 @@ impl OpenTray {
         for &[c, r] in &sp.pairs {
             let Some(&i) = self.arrival_links.get(&r).and_then(|sid| by_id.get(sid.as_str())) else { continue };
             let s = &self.stones[i];
-            let Some(ws) = self.point.get(&c).or_else(|| tw.get(c)).filter(|ws| !ws.held) else { continue };
-            if s.added || s.status == TrayStoneStatus::Removed || claimed.contains(&c) || used.contains(&i) {
+            let Some(ws) = self.point.get(&c).or_else(|| tw.get(c)).filter(|ws| !ws.under_sheet && !ws.held) else {
+                continue;
+            };
+            if s.under_sheet
+                || s.added
+                || s.status == TrayStoneStatus::Removed
+                || claimed.contains(&c)
+                || used.contains(&i)
+            {
                 continue;
             }
             // a stone nothing disturbed (trusted) keeps its world stone, and keeps it from others: on

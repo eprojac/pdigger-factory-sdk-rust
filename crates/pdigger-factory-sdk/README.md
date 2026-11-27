@@ -10,7 +10,7 @@ The core crate requires Rust 1.88 or later. Live calls use Tokio and reqwest wit
 
 ```toml
 [dependencies]
-pdigger-factory-sdk = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust", tag = "v1.0.1" }
+pdigger-factory-sdk = { git = "https://github.com/eprojac/pdigger-factory-sdk-rust", branch = "main" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures = "0.3"
 ```

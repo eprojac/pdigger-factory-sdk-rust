@@ -109,6 +109,7 @@ pub fn delete_reason(why: &str) -> &str {
         "empty" => "its place is empty",
         "hand" => "a hand emptied its place",
         "carried-away" => "carried away",
+        "sheet" => "gone from under a sheet",
         other => other,
     }
 }
@@ -121,6 +122,7 @@ pub(crate) struct EventText<'a> {
     pub side: Option<&'a Side>,
     pub why: Option<&'a str>,
     pub into: Option<&'a [i64]>,
+    pub ids: Option<&'a [i64]>,
     pub source: Option<&'a str>,
 }
 
@@ -153,6 +155,18 @@ pub(crate) fn event_sentence(e: EventText<'_>) -> String {
             None => format!("stone {i} is removed"),
             Some(why) => format!("stone {i} is removed ({})", delete_reason(why)),
         },
+        EventKind::Sheet => match e.why {
+            Some(action @ ("laid" | "lifted")) => {
+                let mut text = format!("a sheet is {action}");
+                if let Some(ids) = e.ids.filter(|ids| !ids.is_empty()) {
+                    let prep = if action == "laid" { "over" } else { "off" };
+                    text.push_str(&format!(" {prep} {}", stones_text(ids)));
+                }
+                text
+            }
+            Some(action) if !action.is_empty() => format!("a sheet event ({action})"),
+            _ => "a sheet event".into(),
+        },
         EventKind::Split => match e.into {
             None | Some([]) => format!("stone {i} splits"),
             Some([_]) => format!("stone {i} is trimmed"),
@@ -163,13 +177,20 @@ pub(crate) fn event_sentence(e: EventText<'_>) -> String {
 }
 
 /// `stone 3`, `stones 3 and 5`, `stones 3, 5, 9, 11, 12, 14 and 4 more`.
-pub(crate) fn stones_text(ids: &[i64]) -> String {
+pub(crate) fn stones_text<T: std::fmt::Display>(ids: &[T]) -> String {
     match ids.len() {
         0 => "stone ?".to_string(),
         1 => format!("stone {}", ids[0]),
-        2..=6 => format!("stones {}", join_ids(ids)),
+        2..=6 => {
+            let (last, rest) = ids.split_last().expect("at least two names");
+            format!("stones {} and {last}", rest.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "))
+        }
         n => {
-            format!("stones {} and {} more", ids[..6].iter().map(i64::to_string).collect::<Vec<_>>().join(", "), n - 6)
+            format!(
+                "stones {} and {} more",
+                ids[..6].iter().map(ToString::to_string).collect::<Vec<_>>().join(", "),
+                n - 6
+            )
         }
     }
 }
@@ -218,8 +239,9 @@ mod tests {
         let texts = reasons.map(delete_reason);
         assert_eq!(texts[6], "carried away");
         assert_eq!(texts[7], "zz");
-        assert_eq!(stones_text(&[]), "stone ?");
-        assert_eq!(stones_text(&[3, 5, 9, 11, 12, 14, 15, 16, 17, 18]), "stones 3, 5, 9, 11, 12, 14 and 4 more");
+        assert_eq!(delete_reason("sheet"), "gone from under a sheet");
+        assert_eq!(stones_text::<i64>(&[]), "stone ?");
+        assert_eq!(stones_text::<i64>(&[3, 5, 9, 11, 12, 14, 15, 16, 17, 18]), "stones 3, 5, 9, 11, 12, 14 and 4 more");
     }
 
     fn says(
@@ -229,7 +251,7 @@ mod tests {
         into: Option<&[i64]>,
         source: Option<&str>,
     ) -> String {
-        event_sentence(EventText { kind: &kind, id: Some(7), side: side.as_ref(), why, into, source })
+        event_sentence(EventText { kind: &kind, id: Some(7), side: side.as_ref(), why, into, ids: None, source })
     }
 
     #[test]
@@ -261,5 +283,15 @@ mod tests {
         assert_eq!(says(EventKind::Split, None, None, Some(&[7]), None), "stone 7 is trimmed");
         assert_eq!(says(EventKind::Split, None, None, Some(&[7, 9, 10]), None), "stone 7 splits into 7, 9 and 10");
         assert_eq!(says(EventKind::Other("melt".into()), None, None, None, None), "stone 7: melt");
+        for (why, ids, expected) in [
+            (Some("laid"), Some(&[7, 9][..]), "a sheet is laid over stones 7 and 9"),
+            (Some("lifted"), Some(&[7][..]), "a sheet is lifted off stone 7"),
+            (Some("laid"), None, "a sheet is laid"),
+            (Some("rolled"), None, "a sheet event (rolled)"),
+            (None, None, "a sheet event"),
+        ] {
+            let e = EventText { kind: &EventKind::Sheet, id: None, side: None, why, into: None, ids, source: None };
+            assert_eq!(event_sentence(e), expected);
+        }
     }
 }

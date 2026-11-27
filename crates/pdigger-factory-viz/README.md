@@ -8,7 +8,7 @@ widgets can be embedded in a Rust application.
 Install with Rust 1.95 or later, then pass a recording file, a recording URL or a live unit address.
 
 ```sh
-cargo install --locked --git https://github.com/eprojac/pdigger-factory-sdk-rust --tag v1.0.1 pdigger-factory-viz
+cargo install --locked --git https://github.com/eprojac/pdigger-factory-sdk-rust --branch main pdigger-factory-viz
 pdigger-factory-viewer https://factory.pdigger.com/developers/data/dry1.world.ndjson.gz
 pdigger-factory-viewer http://factory-orin.local:8120
 ```

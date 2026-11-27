@@ -136,7 +136,9 @@ pub const TRAYS_KEPT: usize = 256;
 /// A point of a tray: grid frame, media time and wall time (`None` before a clock state is known).
 pub type TrayPoint = TimeRef;
 
+mod sheets;
 mod speckle;
+use sheets::check_sheets;
 pub use speckle::{
     SPECKLE_CLEAN, SPECKLE_CODES, SPECKLE_KEPT, SPECKLE_NEAR, SpeckleSide, StoneSpeckle, TraySpeckle,
     describe_speckle_txt,
@@ -159,6 +161,8 @@ wire_enum! {
         Added = "added",
         /// The tray is leaving: its final account.
         Leaving = "leaving",
+        /// Paper was laid over or lifted off tray stones.
+        Sheet = "sheet",
     }
 }
 
@@ -292,6 +296,12 @@ impl TrayOpen {
 /// `-2` at the end, a third `-3`). An id is never given to two stones.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrayStone {
+    /// Paper currently covers this tray stone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub under_sheet: bool,
+    /// First calm observation of the current cover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet_since: Option<TrayPoint>,
     /// The tray stone's id.
     pub id: String,
     /// The world stone it stands for now (`None` while lost and once removed).
@@ -362,6 +372,12 @@ pub struct TrayStone {
 /// leaving.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrayFact {
+    /// Sorted tray-stone IDs affected by a sheet action.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tray_stones: Vec<String>,
+    /// Stones leaving under paper.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub under_sheet: Option<u64>,
     /// What it says.
     pub kind: TrayFactKind,
     /// The tray's number in its session, from 1.
@@ -453,13 +469,18 @@ impl TrayFact {
         let why = self.why.as_deref().unwrap_or("");
         match &self.kind {
             TrayFactKind::Arrived => format!("{head} arrived: {} stones", n(self.stones)),
+            TrayFactKind::Sheet => {
+                let action = if self.code.as_deref() == Some("sheet_laid") { "laid over" } else { "lifted off" };
+                format!("{head}: a sheet was {action} {}", super::text::stones_text(&self.tray_stones))
+            }
             TrayFactKind::Leaving => format!(
-                "{head} leaving: {} stones ({} sure), {} added, {} removed, {} unclear",
+                "{head} leaving: {} stones ({} sure), {} added, {} removed, {} unclear{}",
                 n(self.stones),
                 n(self.sure),
                 n(self.added),
                 n(self.removed),
-                n(self.unclear)
+                n(self.unclear),
+                self.under_sheet.filter(|v| *v > 0).map(|v| format!(", {v} under a sheet")).unwrap_or_default()
             ),
             TrayFactKind::Unsure => match self.opened {
                 Some(o) => format!("{head}: stone {id} is not sure any more ({why}; open since {})", clock(o.t)),
@@ -684,8 +705,17 @@ impl TrayChange {
 /// (those added unclear aside); the tray's facts and its open account ([`Tray::open`]) say why,
 /// stone by stone. `arrived.wall` and `left.wall` are the unit's wall clock (UTC epoch seconds)
 /// when it is known.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct TrayReport {
+    /// Sorted tray IDs still under paper at departure.
+    #[serde(default)]
+    pub under_sheet: Vec<String>,
+    /// Sheet lays observed on this tray.
+    #[serde(default)]
+    pub sheets: u64,
+    /// The sheet actions in observation order.
+    #[serde(default)]
+    pub sheet_facts: Vec<TrayFact>,
     /// Session.
     pub session: i64,
     /// Source (video id).
@@ -727,6 +757,9 @@ impl TrayReport {
             self.added.len(),
             self.moved.len()
         );
+        if !self.under_sheet.is_empty() {
+            head += &format!(", {} under a sheet", self.under_sheet.len());
+        }
         if !self.complete {
             let mut parts = Vec::new();
             if self.unclear > 0 {
@@ -738,7 +771,8 @@ impl TrayReport {
             head += &format!(", not complete: {}", parts.join(", "));
         }
         let lines = self.removed.iter().chain(&self.added).chain(&self.moved).map(|c| format!("\n  {}", c.describe()));
-        head + &lines.collect::<String>()
+        let sheets = self.sheet_facts.iter().map(|f| format!("\n  {}", f.describe()));
+        head + &lines.chain(sheets).collect::<String>()
     }
 }
 
@@ -837,14 +871,28 @@ fn tray_report(tray: &Tray) -> Option<TrayReport> {
         unclear,
         unsure,
         complete: unclear == 0 && leaving.sure == leaving.stones,
+        under_sheet: tray
+            .stones
+            .iter()
+            .filter(|s| s.status == TrayStoneStatus::On && s.under_sheet)
+            .map(|s| s.id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        sheets: tray.facts.iter().filter(|f| f.code.as_deref() == Some("sheet_laid")).count() as u64,
+        sheet_facts: tray.facts.iter().filter(|f| f.kind == TrayFactKind::Sheet).cloned().collect(),
     })
 }
 
 /// The trays counts of the summary: trays opened and arrived, tray stones at the arrivals,
 /// certain and unclear facts, and tray stones that stopped being sure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(default)]
 pub struct TrayCounts {
+    /// Newly laid sheets.
+    pub sheets: u64,
+    /// Stones leaving under paper.
+    pub under_sheet: u64,
     /// Trays (static stops of at least 2 s).
     pub total: u64,
     /// Trays that arrived and settled.
@@ -949,9 +997,10 @@ fn check_tray(t: &Tray) -> Vec<String> {
     if let Some(leave) = facts.last().filter(|f| f.kind == Leaving) {
         check_leaving(t, leave, &on, &by_id, &mut bad);
     }
+    let lifted = check_sheets(t, &by_id, &mut bad);
     let mut worlds = BTreeSet::new();
     for s in &on {
-        if !s.world_id.is_some_and(|w| worlds.insert(w)) {
+        if !s.world_id.map_or(!s.sure && !s.under_sheet && lifted.contains(s.id.as_str()), |w| worlds.insert(w)) {
             bad.insert("C6");
         }
     }
@@ -1024,7 +1073,8 @@ fn check_leaving(
             continue; // the checks below read the first and last candidate; C8 has nothing to check
         }
         let last = c[c.len() - 1].kind.as_str();
-        if (o.kind == Unsure && (c[0].kind != "world" || c[0].world_id != o.world_id))
+        if (o.kind == Unsure
+            && (c[0].kind != if o.world_id.is_some() { "world" } else { "unseen" } || c[0].world_id != o.world_id))
             || (o.kind != Added && !c.iter().any(|x| x.kind == "gone"))
             || (o.kind == Removed && last != "unseen")
             || (o.kind == Added && last != "new")
@@ -1061,6 +1111,9 @@ fn by_near<K: Ord>(a: &(f64, K), b: &(f64, K)) -> std::cmp::Ordering {
 /// A world stone as the rules see it.
 #[derive(Debug, Clone)]
 struct Ws {
+    under_sheet: bool,
+    mode: StoneMode,
+    outline: Option<[f64; 4]>,
     id: i64,
     held: bool,
     frozen: bool,
@@ -1079,6 +1132,9 @@ impl Ws {
         let solid = s.solid.as_ref().filter(|o| o.pos.len() >= 2 && o.dims.len() >= 2 && o.q.len() >= 4)?;
         Some(Ws {
             id: s.id,
+            under_sheet: s.under_sheet,
+            mode: s.mode.clone(),
+            outline: sheets::extent(&s.outline),
             held: matches!(s.mode, StoneMode::Carry | StoneMode::Hinge),
             frozen: s.shape == StoneShape::Frozen,
             detected: s.detected,
@@ -1127,7 +1183,7 @@ impl Ws {
         let reach = d[0].max(d[1]);
         let mut best = 0;
         for o in world {
-            if o.id == self.id || dist(o.pos, self.pos) > (reach + o.dims[0].max(o.dims[1])) / 2.0 {
+            if o.under_sheet || o.id == self.id || dist(o.pos, self.pos) > (reach + o.dims[0].max(o.dims[1])) / 2.0 {
                 continue;
             }
             best = best.max(pts.iter().filter(|p| o.covers(**p, 0.0)).count());
@@ -1190,6 +1246,8 @@ fn hand_took(s: &St) -> bool {
 /// A world event as the rules see it.
 #[derive(Debug, Clone)]
 struct Ev {
+    why: Option<String>,
+    ids: Vec<i64>,
     kind: EventKind,
     id: Option<i64>,
     /// It has a side.
@@ -1269,6 +1327,8 @@ impl TrayWorld {
                 kind: e.kind.clone(),
                 id: e.id,
                 side: e.side.is_some(),
+                why: e.why.clone(),
+                ids: e.ids.clone().unwrap_or_default(),
                 by_hand: e.kind == EventKind::Delete && e.why.as_deref() == Some("hand"),
                 took: e.kind == EventKind::Delete && matches!(e.why.as_deref(), Some("hand" | "carried-away")),
             })
@@ -1286,7 +1346,7 @@ impl TrayWorld {
     }
 
     fn observed_stone(&self, s: &St) -> Option<&Ws> {
-        self.get(s.world?).filter(|w| s.on() && w.detected && !w.held)
+        self.get(s.world?).filter(|w| s.on() && !w.under_sheet && w.detected && !w.held)
     }
 
     /// Its stones by id, held or not, detected or kept: a point's world as the leaving reads it.
@@ -1312,6 +1372,7 @@ impl TrayWorld {
             .iter()
             .filter(|w| {
                 w.id != id
+                    && !w.under_sheet
                     && (w.detected || include_kept)
                     && !w.held
                     && compatible(w.size(), size)
@@ -1423,9 +1484,9 @@ fn runs(s: &mut St) -> impl Iterator<Item = &mut Watch> {
 /// Another world stone of the stone's size (`size`) within [`NEAR`] of the place where it was
 /// last seen before its unseen run: a sight there can not tell the two apart (spec 4.6.1).
 fn crowded(size: P, w: &Watch, tw: &TrayWorld) -> bool {
-    tw.stones
-        .iter()
-        .any(|ws| ws.id != w.wid && !ws.held && compatible(ws.size(), size) && dist(ws.pos, w.place) <= NEAR)
+    tw.stones.iter().any(|ws| {
+        ws.id != w.wid && !ws.under_sheet && !ws.held && compatible(ws.size(), size) && dist(ws.pos, w.place) <= NEAR
+    })
 }
 
 /// The sight half of a settle (spec 4.6.1, presence questions): linked to the run's world stone;
@@ -1534,7 +1595,7 @@ fn set_latest(s: &mut St, look: Look) {
 /// A stored look still describes its stone: the stone is here, not held, within [`NEAR`] of where
 /// the look was read, and no hand mark after the look lies within [`HAND_R`] of that place.
 fn fresh(marks: &[(f64, P)], e: &Look, tw: &TrayWorld) -> bool {
-    if !tw.get(e.wid).is_some_and(|w| !w.held && dist(w.pos, e.place) <= NEAR) {
+    if !tw.get(e.wid).is_some_and(|w| !w.under_sheet && !w.held && dist(w.pos, e.place) <= NEAR) {
         return false;
     }
     for &(t, p) in marks.iter().rev() {
@@ -1556,6 +1617,9 @@ fn since_of(s: &St, r: TimeRef) -> i64 {
 /// A tray stone's working state.
 #[derive(Debug, Clone, Default)]
 struct St {
+    under_sheet: bool,
+    sheet_since: Option<TimeRef>,
+    sheet_loss: bool,
     id: String,
     index: usize,
     world: Option<i64>,
@@ -1662,6 +1726,8 @@ impl St {
             speckle: self.speckle.clone(),
             by_speckle: self.by_speckle,
             evidence: self.evidence.clone(),
+            under_sheet: self.under_sheet,
+            sheet_since: self.sheet_since,
         }
     }
 
@@ -1795,6 +1861,8 @@ impl OpenTray {
         let (id, world_id) = stone.map_or((None, None), |i| (Some(self.stones[i].id.clone()), self.stones[i].world));
         TrayFact {
             kind,
+            tray_stones: Vec::new(),
+            under_sheet: None,
             tray: self.n,
             session: self.session,
             video: self.video.clone(),
@@ -1914,8 +1982,8 @@ impl OpenTray {
             return false;
         };
         self.inventory_missing.retain(|id, first| tw.get(*id).is_none() && tw.r.g.saturating_sub(*first) < 2);
-        for id in previous.by_id.keys().filter(|id| tw.get(**id).is_none()) {
-            self.inventory_missing.insert(*id, tw.r.g);
+        for w in previous.stones.iter().filter(|w| !w.under_sheet && tw.get(w.id).is_none()) {
+            self.inventory_missing.insert(w.id, tw.r.g);
         }
         !self.inventory_missing.is_empty()
     }
@@ -1954,6 +2022,7 @@ impl OpenTray {
                         let from_own = dist(gap.place, w.pos);
                         let size = w.size();
                         w.detected
+                            && !w.under_sheet
                             && !w.held
                             && compatible(gap.size, size)
                             && from_own <= RENAME_D
@@ -1981,6 +2050,7 @@ impl OpenTray {
         if let Some(previous) = self.last.as_ref().filter(|w| quiet && w.undisturbed()) {
             for w in &previous.stones {
                 if w.detected
+                    && !w.under_sheet
                     && !w.held
                     && tw.get(w.id).is_none()
                     && (self.link.contains_key(&w.id) || self.unid.contains_key(&w.id))
@@ -2004,7 +2074,7 @@ impl OpenTray {
                             other_stones: previous
                                 .stones
                                 .iter()
-                                .filter(|o| o.id != w.id && o.detected && !o.held)
+                                .filter(|o| o.id != w.id && !o.under_sheet && o.detected && !o.held)
                                 .map(|o| (o.pos, o.size()))
                                 .collect(),
                             unidentified,
@@ -2022,7 +2092,7 @@ impl OpenTray {
             clear && !self.missing.is_empty() && tw.events.is_empty() && self.calm_ref == Some(w.r) && w.undisturbed()
         });
         self.unid.retain(|id, u| {
-            let Some(ws) = tw.get(*id) else { return false };
+            let Some(ws) = tw.get(*id).filter(|w| !w.under_sheet) else { return false };
             if previous.is_none() {
                 u.detections = 0;
             }
@@ -2081,6 +2151,9 @@ impl OpenTray {
     fn lose(&mut self, i: usize, r: TimeRef) {
         let (k, calm_t) = (self.k, self.settle_t);
         let s = &mut self.stones[i];
+        s.under_sheet = false;
+        s.sheet_since = None;
+        s.sheet_loss = false;
         s.run1 = None; // a lost stone's unseen run ends (4.6.1): never spoilt while unlinked; on probation, it fails
         s.world = None;
         s.status = TrayStoneStatus::Lost;
@@ -2319,6 +2392,7 @@ impl OpenTray {
         let u = self.unid.remove(&wid).expect("an unidentified stone");
         let ws = tw.get(wid).expect("in this frame's world");
         let s = &mut self.stones[i];
+        s.sheet_loss = false;
         s.world = Some(wid);
         s.status = TrayStoneStatus::On;
         s.touched = Some(r.g);
@@ -2388,7 +2462,7 @@ impl OpenTray {
 
     fn settle(&mut self, tw: &TrayWorld, r: TimeRef, last: bool, sink: &mut Sink<'_>) {
         let (t, k) = (r.t, self.k);
-        let world: Vec<&Ws> = tw.stones.iter().filter(|w| !w.held).collect();
+        let world: Vec<&Ws> = tw.stones.iter().filter(|w| !w.under_sheet && !w.held).collect();
         let mut births: Vec<(P, P)> =
             self.unid.values().filter(|u| u.born.t > self.settle_t).map(|u| (u.place, u.size)).collect();
         births.extend(
@@ -2409,7 +2483,7 @@ impl OpenTray {
             .unwrap_or_default();
         for i in 0..self.stones.len() {
             let s = &self.stones[i];
-            if !s.on() || !s.sure || s.at_k != k || paired.contains(&i) {
+            if s.under_sheet || !s.on() || !s.sure || s.at_k != k || paired.contains(&i) {
                 continue;
             }
             let ws = s.world.and_then(|id| tw.get(id));
@@ -2517,7 +2591,7 @@ impl OpenTray {
                 break;
             }
             let s = &self.stones[i];
-            if !s.lost() || (s.lost_k >= k && t - s.lost_t < RENAME_T) {
+            if !s.lost() || s.sheet_loss || (s.lost_k >= k && t - s.lost_t < RENAME_T) {
                 continue;
             }
             if world.iter().any(|w| w.covers(s.place, MARGIN)) || self.rivals(s) || !hand_took(s) {
@@ -2593,6 +2667,13 @@ impl OpenTray {
         for i in 0..self.stones.len() {
             if self.stones[i].lost() {
                 let s = &mut self.stones[i];
+                if s.sheet_loss {
+                    s.status = TrayStoneStatus::On;
+                    if s.sure {
+                        self.unsure(i, "its track ended when the paper lifted", "unseen", r, sink);
+                    }
+                    continue;
+                }
                 s.status = TrayStoneStatus::Removed;
                 s.certain = Some(false);
                 s.left_now = true;
@@ -2623,7 +2704,7 @@ impl OpenTray {
                     // detected, not held, in the leaving point's world: positive evidence too (no hand worked since);
                     // or kept there, not held, less than OVERLAP of its box under another unheld stone's: the world
                     // kept it on the tray although the model did not box it there (version 7)
-                    let unheld: Vec<&Ws> = self.point.values().filter(|o| !o.held).collect();
+                    let unheld: Vec<&Ws> = self.point.values().filter(|o| !o.under_sheet && !o.held).collect();
                     !at.held && (at.detected || at.overlap_share(&unheld) < OVERLAP)
                 })
                 .cloned()
@@ -2679,7 +2760,7 @@ impl OpenTray {
         }
         self.store.retain(|id, _| tw.by_id.contains_key(id));
         for ws in &tw.stones {
-            if ws.held || !inside_board(self.board.as_ref(), ws.pos) {
+            if ws.under_sheet || ws.held || !inside_board(self.board.as_ref(), ws.pos) {
                 continue;
             }
             if let Some(cells) = &ws.look {
@@ -2765,7 +2846,7 @@ impl OpenTray {
 
     fn anchors(&mut self, tw: &TrayWorld) {
         for s in &mut self.stones {
-            let Some(w) = s.world.filter(|_| s.on() && s.chain.is_empty()) else { continue };
+            let Some(w) = s.world.filter(|_| !s.under_sheet && s.on() && s.chain.is_empty()) else { continue };
             let Some(e) = self.store.get(&w).filter(|e| e.taken && fresh(&self.marks, e, tw)) else { continue };
             if untouched(s) && e.detected && s.ghost == 0 {
                 s.chain = vec![e.clone()];
@@ -2782,7 +2863,7 @@ impl OpenTray {
         let tid = self.tid();
         let mut rows: Vec<(usize, i64)> = Vec::new();
         for s in &self.stones {
-            if s.chain.is_empty() || !s.sure {
+            if s.under_sheet || s.chain.is_empty() || !s.sure {
                 continue;
             }
             let since = match (&s.status, &s.question) {
@@ -2796,7 +2877,7 @@ impl OpenTray {
         }
         let mut cols: Vec<&Ws> = Vec::new();
         for ws in &tw.stones {
-            if ws.held || !inside_board(self.board.as_ref(), ws.pos) {
+            if ws.under_sheet || ws.held || !inside_board(self.board.as_ref(), ws.pos) {
                 continue;
             }
             if !self.store.get(&ws.id).is_some_and(|e| e.taken && fresh(&self.marks, e, tw)) {
@@ -2953,7 +3034,9 @@ impl OpenTray {
         let from = self.stones[i].world.filter(|_| self.stones[i].on());
         if let Some(w0) = from {
             self.link.remove(&w0);
-            if let Some(ws0) = tw.get(w0).filter(|w| !w.held && inside_board(self.board.as_ref(), w.pos)) {
+            if let Some(ws0) =
+                tw.get(w0).filter(|w| !w.under_sheet && !w.held && inside_board(self.board.as_ref(), w.pos))
+            {
                 self.unid.insert(w0, Unid { freed: true, ..Unid::of(ws0, r) });
             }
         }
@@ -3002,7 +3085,7 @@ impl OpenTray {
         let rows: BTreeSet<usize> = run.rows.iter().map(|r| r.0).collect();
         let (mut sure_world, mut stone_on) = (BTreeSet::new(), BTreeMap::new());
         for s in self.stones.iter().filter(|s| s.on()) {
-            let w = s.world.expect("a stone on the tray is linked");
+            let Some(w) = s.world else { continue };
             stone_on.insert(w, s.id.clone());
             if s.sure {
                 sure_world.insert(w);
@@ -3011,7 +3094,9 @@ impl OpenTray {
         let free: Vec<&Ws> = tw
             .stones
             .iter()
-            .filter(|w| !w.held && inside_board(self.board.as_ref(), w.pos) && !sure_world.contains(&w.id))
+            .filter(|w| {
+                !w.under_sheet && !w.held && inside_board(self.board.as_ref(), w.pos) && !sure_world.contains(&w.id)
+            })
             .collect();
         let mut entries = Vec::new();
         for i in 0..self.stones.len() {
@@ -3045,7 +3130,7 @@ impl OpenTray {
     ) -> TrayOpen {
         let i = s.index;
         let removed = kind == TrayFactKind::Removed;
-        let covered = tw.stones.iter().any(|ws| !ws.held && ws.covers(s.place, MARGIN));
+        let covered = tw.stones.iter().any(|ws| !ws.under_sheet && !ws.held && ws.covers(s.place, MARGIN));
         let cause = if !removed {
             s.unsure_code // every unsure fact has its code
         } else if s.look_lost {
@@ -3080,6 +3165,9 @@ impl OpenTray {
         };
         let score_of = |id: i64| ps.iter().find(|p| p.key == id).and_then(|p| p.s).map(|x| x.0);
         let mut cands = Vec::new();
+        if s.on() && s.world.is_none() {
+            cands.push(TrayCandidate { kind: "unseen".into(), world_id: None, stone: None, score: None, why: None });
+        }
         if let Some(w) = s.world.filter(|_| s.on()) {
             cands.push(TrayCandidate {
                 kind: "world".into(),
@@ -3234,6 +3322,8 @@ fn tie_or(run: &Run, keys: &[(usize, i64)], ps: &[Pair], other: &'static str) ->
 /// session ends. Each tray that leaves goes to `closed`.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TrayLedger {
+    pub(super) bounds: Option<[f64; 4]>,
+    visit_seen: BTreeSet<i64>,
     session: i64,
     video: String,
     n: i64,
@@ -3285,12 +3375,15 @@ impl TrayLedger {
     /// The world of the session's next frame; its tray facts go to `sink`.
     pub(crate) fn feed(&mut self, w: &WorldLayer, r: TimeRef, sink: &mut Sink<'_>) {
         let hole = std::mem::take(&mut self.hole);
+        let tw = TrayWorld::new(w, r);
+        if self.retire_sheet(&tw, w.motion == Motion::Static, hole, sink) {
+            return;
+        }
         if w.motion != Motion::Static {
             self.stop.clear();
             self.on = false;
             return;
         }
-        let tw = TrayWorld::new(w, r);
         if self.on {
             self.frame(tw, hole, sink);
             return;
@@ -3313,8 +3406,11 @@ impl TrayLedger {
     }
 
     fn begin(&mut self, sink: &mut Sink<'_>) {
-        let unheld: BTreeSet<i64> = self.stop[0].0.stones.iter().filter(|s| !s.held).map(|s| s.id).collect();
-        let ids: BTreeSet<i64> = self.stop[0].0.stones.iter().filter(|s| !s.held && s.detected).map(|s| s.id).collect();
+        self.visit_seen.clear();
+        let unheld: BTreeSet<i64> =
+            self.stop[0].0.stones.iter().filter(|s| !s.held && !s.under_sheet).map(|s| s.id).collect();
+        let ids: BTreeSet<i64> =
+            self.stop[0].0.stones.iter().filter(|s| !s.under_sheet && !s.held && s.detected).map(|s| s.id).collect();
         let goes_on = self
             .tray
             .as_ref()
@@ -3357,10 +3453,12 @@ impl TrayLedger {
 
     fn rules(&mut self, tr: &mut OpenTray, tw: &TrayWorld, hole: bool, sink: &mut Sink<'_>) {
         let (r, t) = (tw.r, tw.r.t);
-        tr.ids.extend(tw.by_id.keys());
+        tr.ids.extend(tw.stones.iter().filter(|w| !w.under_sheet).map(|w| w.id));
+        self.visit_seen.extend(tw.stones.iter().filter(|w| !w.under_sheet && w.detected).map(|w| w.id));
         tr.store_looks(tw);
         let hand = tw.events.iter().any(Ev::hand);
-        let change = tw.events.iter().any(|e| matches!(e.kind, EventKind::New | EventKind::Delete | EventKind::Split));
+        let change = tw.events.iter().any(|e| matches!(e.kind, EventKind::New | EventKind::Delete | EventKind::Split))
+            && !self.only_background_retired(tr, tw, hole);
         self.quiet = if tw.events.iter().any(|e| e.kind == EventKind::New) { 0 } else { self.quiet + 1 };
         let held = tw.stones.iter().any(|w| w.held);
         tr.omissions(tw, hole);
@@ -3408,6 +3506,7 @@ impl TrayLedger {
                 let calm_g = self.calm_g;
                 tr.store.retain(|_, e| e.g >= calm_g);
                 self.arrive(tr, tw, sink);
+                tr.sheet_laid(&(0..tr.stones.len()).collect::<Vec<_>>(), r, sink);
                 // the links as it arrived, for the speckle answers (spec 4.6.12)
                 tr.arrival_links = tr.link.iter().map(|(&wid, &i)| (wid, tr.stones[i].id.clone())).collect();
                 tr.ids_at_arrival = tr.ids.clone();
@@ -3415,6 +3514,7 @@ impl TrayLedger {
             }
             return;
         }
+        tr.observe_sheets(tw, !pending && self.calm >= CALM, sink);
         // 1. where hands worked
         for e in tw.events.iter().filter(|e| e.hand() || e.by_hand) {
             let Some(id) = e.id else { continue };
@@ -3480,7 +3580,7 @@ impl TrayLedger {
         // a busy frame or a push frame spoils the unseen run of a linked stone not detected on it (4.6.1)
         if tr.busy_t == Some(t) || tr.push_t == Some(t) {
             for (&id, &i) in &tr.link {
-                if tw.get(id).is_some_and(|w| !w.detected) {
+                if !tr.stones[i].under_sheet && tw.get(id).is_some_and(|w| !w.detected) {
                     for run in runs(&mut tr.stones[i]) {
                         // always later: a stone not detected on this frame was last seen before it (Python's guard)
                         run.spoilt |= t > run.seen_t;
@@ -3491,6 +3591,9 @@ impl TrayLedger {
         // 4. linked stones in this frame's world
         let linked: Vec<(i64, usize)> = tr.link.iter().map(|(&id, &i)| (id, i)).collect();
         for (id, i) in linked {
+            if tr.stones[i].under_sheet {
+                continue;
+            }
             let Some(ws) = tw.get(id) else {
                 if !tr.missing.contains_key(&id) {
                     tr.link.remove(&id);
@@ -3541,7 +3644,7 @@ impl TrayLedger {
         }
         // 5. world stones no tray stone stands for
         for ws in &tw.stones {
-            if tr.link.contains_key(&ws.id) || tr.unid.contains_key(&ws.id) || ws.held {
+            if tr.link.contains_key(&ws.id) || tr.unid.contains_key(&ws.id) || ws.under_sheet || ws.held {
                 continue;
             }
             if inside_board(tr.board.as_ref(), ws.pos) {
@@ -3562,7 +3665,7 @@ impl TrayLedger {
             if tr.visit.quiet_frames == CALM {
                 for i in 0..tr.stones.len() {
                     let s = &tr.stones[i];
-                    let Some(id) = s.world.filter(|_| s.on() && s.sure) else { continue };
+                    let Some(id) = s.world.filter(|_| !s.under_sheet && s.on() && s.sure) else { continue };
                     if tw.get(id).is_none_or(|w| w.detected) {
                         continue;
                     }
@@ -3603,11 +3706,15 @@ impl TrayLedger {
         tr.board = tw.board.clone();
         let st = stamp(r.wall, r.t, self.session);
         for ws in &tw.stones {
-            if ws.held || !inside_board(tr.board.as_ref(), ws.pos) {
+            if ws.held
+                || (ws.under_sheet && !self.visit_seen.contains(&ws.id))
+                || !inside_board(tr.board.as_ref(), ws.pos)
+            {
                 continue;
             }
             let mut s = tr.new_stone(format!("{st}-{}-{}", tr.n, ws.id), ws, r);
-            s.calm_place = ws.detected.then_some(ws.pos);
+            s.under_sheet = ws.under_sheet;
+            s.calm_place = (ws.detected && !ws.under_sheet).then_some(ws.pos);
             tr.link.insert(ws.id, s.index);
             tr.stones.push(s);
         }
@@ -3621,6 +3728,10 @@ impl TrayLedger {
 
     /// Makes the open tray leave: its final account (spec 4.6.7), then it goes to `closed`.
     fn close_tray(&mut self, sink: &mut Sink<'_>) {
+        self.close_at(None, &[], sink);
+    }
+
+    fn close_at(&mut self, boundary: Option<TimeRef>, lifted: &[usize], sink: &mut Sink<'_>) {
         let Some(mut tr) = self.tray.take() else { return };
         let Some(tw) = tr.last.take().filter(|_| tr.arrived.is_some()) else {
             self.closed.push(tr.view()); // it never arrived
@@ -3630,7 +3741,8 @@ impl TrayLedger {
         let fallback =
             tr.visit.fallback.take().filter(|_| !tr.worked && tr.calm_ref.is_some_and(|c| c.g < tr.visit.start_g));
         let leave = fallback.as_ref().map(|s| s.at).or(tr.calm_ref.filter(|_| !tr.worked)).unwrap_or(tw.r);
-        tr.leaving = Some(leave);
+        let departure = boundary.unwrap_or(leave);
+        tr.leaving = Some(departure);
         // each stone's place at the leaving point, if it was seen there (spec 4.7), before the last settle
         let at_calm = tr.calm_ref.is_some() && !tr.worked;
         for s in &mut tr.stones {
@@ -3656,7 +3768,8 @@ impl TrayLedger {
         tr.settle(&tw, leave, true, sink);
         for (&id, &i) in &tr.link {
             if previous_links.get(&id) != Some(&i) {
-                tr.stones[i].left_place = tr.point.get(&id).filter(|w| w.detected && !w.held).map(|w| w.pos);
+                tr.stones[i].left_place =
+                    tr.point.get(&id).filter(|w| !w.under_sheet && w.detected && !w.held).map(|w| w.pos);
             }
         }
         // what the leaving's speckle answer found of each stone (spec 4.6.13)
@@ -3664,6 +3777,10 @@ impl TrayLedger {
         for (s, e) in tr.stones.iter_mut().zip(evidence) {
             s.evidence = Some(e);
         }
+        let covered: Vec<_> = tr.stones.iter().filter(|s| s.on() && s.under_sheet).map(|s| s.index).collect();
+        sink.counts.under_sheet += covered.len() as u64;
+        tr.sheet_laid(&covered, departure, sink);
+        tr.sheet_fact(lifted, "sheet_lifted", departure, sink);
         let count = |f: &dyn Fn(&St) -> bool| tr.stones.iter().filter(|s| f(s)).count() as u64;
         let fact = TrayFact {
             stones: Some(count(&|s| s.on())),
@@ -3673,7 +3790,8 @@ impl TrayLedger {
             unclear: Some(tr.unclear),
             t_id: tr.took.then(|| tr.tid()),
             open: Some(tr.open.clone()),
-            ..tr.fact(TrayFactKind::Leaving, None, leave)
+            under_sheet: (!covered.is_empty()).then_some(covered.len() as u64),
+            ..tr.fact(TrayFactKind::Leaving, None, departure)
         };
         tr.say(fact, sink);
         self.closed.push(tr.view());
@@ -4126,7 +4244,15 @@ mod tests {
                 w.stones[0].detected = g != 12;
                 w.confirmed = mode != "arrival" || g == 12;
                 if mode == "worked" && g == 12 {
-                    w.events.push(Ev { kind: EventKind::Place, id: Some(42), side: true, by_hand: false, took: false });
+                    w.events.push(Ev {
+                        why: None,
+                        ids: Vec::new(),
+                        kind: EventKind::Place,
+                        id: Some(42),
+                        side: true,
+                        by_hand: false,
+                        took: false,
+                    });
                 }
                 ledger.rules(&mut tr, &w, false, &mut sink);
                 tr.last = Some(w);
@@ -4167,7 +4293,15 @@ mod tests {
             w.r = TimeRef { g, t: g as f64 / 5.0, wall: None };
             w.stones[0].detected = false;
             if g == 13 {
-                w.events.push(Ev { kind: EventKind::New, id: Some(999), side: false, by_hand: false, took: false });
+                w.events.push(Ev {
+                    why: None,
+                    ids: Vec::new(),
+                    kind: EventKind::New,
+                    id: Some(999),
+                    side: false,
+                    by_hand: false,
+                    took: false,
+                });
             }
             ledger.rules(&mut tr, &w, false, &mut sink);
             tr.last = Some(w);
@@ -4226,9 +4360,19 @@ mod tests {
                     }
                 }
                 if g == 16 {
-                    w.events.push(Ev { kind: EventKind::New, id: Some(100), side: false, by_hand: false, took: false });
+                    w.events.push(Ev {
+                        why: None,
+                        ids: Vec::new(),
+                        kind: EventKind::New,
+                        id: Some(100),
+                        side: false,
+                        by_hand: false,
+                        took: false,
+                    });
                     if case == "hand" {
                         w.events.push(Ev {
+                            why: None,
+                            ids: Vec::new(),
                             kind: EventKind::Place,
                             id: Some(42),
                             side: true,
@@ -4283,6 +4427,76 @@ mod tests {
     }
 
     #[test]
+    fn a_departure_records_new_uncertainty_and_preserves_an_existing_doubt_after_a_sheet_lift() {
+        let tw = world_of(&[]);
+        for sure in [false, true] {
+            let mut tr = OpenTray::new(1, "v", 1);
+            tr.last_run = Some(Run::default());
+            tr.stones.push(St {
+                id: "left slab".into(),
+                sheet_loss: true,
+                status: TrayStoneStatus::Lost,
+                sure,
+                unsure_code: if sure { "" } else { "pushed" },
+                ..St::default()
+            });
+            let (mut counts, mut facts) = (TrayCounts::default(), Vec::new());
+            tr.leave(&tw, tw.r, &mut Sink { counts: &mut counts, facts: &mut facts });
+            assert_eq!(counts.unsure, u64::from(sure));
+            assert_eq!(facts.len(), usize::from(sure));
+            assert!(tr.stones[0].on());
+            assert_eq!(tr.open[0].cause, if sure { "unseen" } else { "pushed" });
+            assert_eq!(tr.open[0].candidates[0].kind, "unseen");
+        }
+    }
+
+    #[test]
+    fn only_the_retirement_of_unobserved_background_can_count_as_a_quiet_arrival() {
+        let mut ledger = TrayLedger::new(1, "v");
+        ledger.bounds = Some([0., 0., 100., 100.]);
+        let mut previous = world_of(&[(1, 0.), (2, 1.), (9, 2.)]);
+        for s in &mut previous.stones {
+            s.outline = Some([1., 1., 5., 5.]);
+            s.mode = StoneMode::Seen;
+            s.detected = true;
+        }
+        let old = &mut previous.stones[2];
+        old.outline = Some([110., 1., 115., 5.]);
+        old.mode = StoneMode::Kept;
+        old.detected = false;
+        let mut next = previous.clone();
+        next.r.g += 1;
+        next.stones.pop();
+        next.by_id.remove(&9);
+        let event = |kind, id, why: &str| Ev {
+            kind,
+            id: Some(id),
+            why: Some(why.into()),
+            ids: Vec::new(),
+            side: false,
+            by_hand: false,
+            took: false,
+        };
+        next.events.push(event(EventKind::Confirm, 1, ""));
+        next.events.push(event(EventKind::Delete, 9, "outside"));
+        let mut tr = OpenTray::new(1, "v", 1);
+        tr.last = Some(previous);
+        assert!(ledger.only_background_retired(&tr, &next, false));
+        assert!(!ledger.only_background_retired(&tr, &next, true));
+        ledger.visit_seen.insert(9);
+        assert!(!ledger.only_background_retired(&tr, &next, false));
+        ledger.visit_seen.clear();
+        for e in [
+            event(EventKind::Delete, 9, "absent"),
+            event(EventKind::Delete, 99, "outside"),
+            event(EventKind::New, 3, ""),
+        ] {
+            next.events[1] = e;
+            assert!(!ledger.only_background_retired(&tr, &next, false));
+        }
+    }
+
+    #[test]
     fn quiet_omissions_preserve_identity_and_birth_only_on_a_clean_return() {
         let frame = |g: i64, bricks: &[(i64, f64)]| {
             let mut w = world_of(bricks);
@@ -4309,7 +4523,15 @@ mod tests {
         advance(&mut tr, frame(12, &[]), false);
         assert_eq!(tr.missing.len(), 2);
         let mut returned = frame(13, &[(41, 0.0), (42, 1.0)]);
-        returned.events.push(Ev { kind: EventKind::Confirm, id: Some(41), side: false, by_hand: false, took: false });
+        returned.events.push(Ev {
+            why: None,
+            ids: Vec::new(),
+            kind: EventKind::Confirm,
+            id: Some(41),
+            side: false,
+            by_hand: false,
+            took: false,
+        });
         advance(&mut tr, returned.clone(), false);
         assert_eq!(tr.unid[&42].born, start.r);
         assert_eq!(tr.link[&41], 0);
@@ -4339,7 +4561,7 @@ mod tests {
         // A different stone may be put down nearby. Free hands in the frame do not erase the event.
         // Check both endpoints: the last observation before the gap and the first one after it.
         for (kind, took) in [(EventKind::Place, false), (EventKind::Push, false), (EventKind::Delete, true)] {
-            let event = Ev { kind, id: Some(52), side: false, by_hand: false, took };
+            let event = Ev { why: None, ids: Vec::new(), kind, id: Some(52), side: false, by_hand: false, took };
             let mut tr = initial.clone();
             tr.last.as_mut().unwrap().events.push(event.clone());
             advance(&mut tr, frame(11, &[]), false);
@@ -4357,7 +4579,15 @@ mod tests {
         let mut tr = initial.clone();
         advance(&mut tr, frame(11, &[]), false);
         let mut recovery = frame(12, &[(41, 0.0), (42, 1.0), (53, 1.4)]);
-        recovery.events.push(Ev { kind: EventKind::New, id: Some(53), side: false, by_hand: false, took: false });
+        recovery.events.push(Ev {
+            why: None,
+            ids: Vec::new(),
+            kind: EventKind::New,
+            id: Some(53),
+            side: false,
+            by_hand: false,
+            took: false,
+        });
         advance(&mut tr, recovery, false);
         assert_eq!(tr.link[&41], 0);
         assert_eq!(tr.unid[&42].born, start.r);
@@ -4418,7 +4648,15 @@ mod tests {
         assert!(closing.missing.is_empty() && closing.unid.is_empty());
 
         let mut pushed = frame(12, &[(41, 0.0), (42, 1.0)]);
-        pushed.events.push(Ev { kind: EventKind::Push, id: Some(99), side: false, by_hand: false, took: false });
+        pushed.events.push(Ev {
+            why: None,
+            ids: Vec::new(),
+            kind: EventKind::Push,
+            id: Some(99),
+            side: false,
+            by_hand: false,
+            took: false,
+        });
         let mut tr = initial.clone();
         advance(&mut tr, frame(11, &[]), false);
         advance(&mut tr, pushed.clone(), false);
@@ -4432,7 +4670,15 @@ mod tests {
         let mut tr = initial;
         advance(&mut tr, frame(11, &[]), false);
         let mut ended = frame(12, &[]);
-        ended.events.push(Ev { kind: EventKind::Gone, id: Some(41), side: false, by_hand: false, took: false });
+        ended.events.push(Ev {
+            why: None,
+            ids: Vec::new(),
+            kind: EventKind::Gone,
+            id: Some(41),
+            side: false,
+            by_hand: false,
+            took: false,
+        });
         advance(&mut tr, ended, false);
         assert!(tr.missing.is_empty());
         assert!(tr.unid.is_empty());

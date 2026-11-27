@@ -33,6 +33,8 @@ wire_enum! {
         Delete = "delete",
         /// A stone splits in two (or is trimmed).
         Split = "split",
+        /// Paper is laid on or lifted from stones.
+        Sheet = "sheet",
     }
 }
 
@@ -158,6 +160,9 @@ pub struct Solid {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StoneView {
+    /// The camera currently sees paper over this stone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub under_sheet: bool,
     /// Persistent over the session, the same for every viewer.
     pub id: i64,
     /// Mode.
@@ -347,6 +352,9 @@ pub struct WorldHands {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorldEvent {
+    /// The world IDs affected by a sheet action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<i64>>,
     /// The type.
     #[serde(rename = "type")]
     pub kind: EventKind,

@@ -22,7 +22,13 @@ pub struct EventCounts {
     pub gone: u64,
     pub delete: u64,
     pub split: u64,
+    #[serde(default, skip_serializing_if = "zero_count")]
+    pub sheet: u64,
     pub other: u64,
+}
+
+fn zero_count(value: &u64) -> bool {
+    *value == 0
 }
 
 impl EventCounts {
@@ -40,6 +46,7 @@ impl EventCounts {
             EventKind::Drop => &mut self.drop,
             EventKind::Gone => &mut self.gone,
             EventKind::Delete => &mut self.delete,
+            EventKind::Sheet => &mut self.sheet,
             EventKind::Split => &mut self.split,
             EventKind::Other(_) => &mut self.other,
         }
@@ -59,9 +66,15 @@ impl EventCounts {
             ("gone", self.gone),
             ("delete", self.delete),
             ("split", self.split),
+            ("sheet", self.sheet),
             ("other", self.other),
         ];
-        pairs.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")
+        pairs
+            .iter()
+            .filter(|(k, v)| *k != "sheet" || *v > 0)
+            .map(|(k, v)| format!("{k} {v}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -222,6 +235,11 @@ impl Summary {
         let p = &self.push_bursts;
         let mean_d = or_dash(m.mean_duration.map(|x| fmt(x, 1)));
         let mean_u = or_dash(m.mean_distance.map(|x| fmt(x, 2)));
+        let paper = if self.trays.sheets > 0 || self.trays.under_sheet > 0 {
+            format!(", sheets laid {}, under a sheet {}", self.trays.sheets, self.trays.under_sheet)
+        } else {
+            String::new()
+        };
         let lines = [
             format!(
                 "frames: {} (with world {}, without {}, revisions {})",
@@ -244,7 +262,7 @@ impl Summary {
             ),
             format!("events: {}", self.events.line()),
             format!(
-                "trays: {} (arrived {}), stones at arrival {}, added {} (+{} unclear), removed {} (+{} unclear), not sure {}",
+                "trays: {} (arrived {}), stones at arrival {}, added {} (+{} unclear), removed {} (+{} unclear), not sure {}{paper}",
                 self.trays.total,
                 self.trays.arrived,
                 self.trays.stones,

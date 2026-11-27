@@ -323,3 +323,200 @@ fn a_summary_without_trays_reads_as_zeros() {
     let at = TimeRef { g: 1, t: 1.0, wall: None };
     assert_eq!(at, TimeRef { g: 1, t: 1.0, wall: None }); // a tray point is a TimeRef
 }
+
+#[test]
+fn sheet_actions_and_revisions() {
+    let replay = Replay::open(recording("trays-sheet-synthetic")).unwrap().run().unwrap();
+    let mut event = replay.events.iter().find(|e| e.kind == EventKind::Sheet).unwrap().clone();
+    event.ids = Some(vec![1, 2, 3, 4, 5, 6, 7]);
+    event.why = Some("laid".into());
+    assert_eq!(event.sentence(), "a sheet is laid over stones 1, 2, 3, 4, 5, 6 and 1 more");
+    event.why = Some("rolled".into());
+    assert_eq!(event.sentence(), "a sheet event (rolled)");
+    event.why = None;
+    assert_eq!(event.sentence(), "a sheet event");
+    event.why = Some("lifted".into());
+    event.ids = None;
+    assert_eq!(event.sentence(), "a sheet is lifted");
+    let first = &replay.trays[0];
+    let text = serde_json::to_value(first.report().unwrap()).unwrap();
+    assert!(text["sheets"].as_u64().unwrap() > 0);
+    assert_eq!(text["sheet_facts"][0]["kind"], "sheet");
+    assert!(text["sheet_facts"][0]["sure"].is_null());
+    assert!(!text["under_sheet"].as_array().unwrap().is_empty());
+    for case in ["size", "id", "duplicate", "unknown action", "early lift", "departure"] {
+        let mut tr = first.clone();
+        match case {
+            "size" => tr.facts[1].stones = Some(99),
+            "id" => tr.facts[1].tray_stones = vec!["unknown".into()],
+            "duplicate" => tr.facts.insert(1, tr.facts[1].clone()),
+            "unknown action" => tr.facts[1].code = Some("rolled".into()),
+            "early lift" => tr.facts[1].code = Some("sheet_lifted".into()),
+            _ => tr.facts.last_mut().unwrap().under_sheet = None,
+        }
+        assert!(tr.check().iter().any(|c| c == if case == "departure" { "C11" } else { "C10" }));
+    }
+}
+
+#[test]
+fn sheet_facts_format_the_names_and_preserve_the_ordinary_report_format() {
+    let paper = Replay::open(recording("trays-sheet-synthetic")).unwrap().trays().unwrap();
+    let ordinary = Replay::open(recording("trays-sheet-synthetic-nosheet")).unwrap().trays().unwrap();
+    let mut fact = paper[0].facts[1].clone();
+    for (n, ending) in
+        [(0, "stone ?"), (1, "stone s1"), (2, "stones s1 and s2"), (7, "stones s1, s2, s3, s4, s5, s6 and 1 more")]
+    {
+        fact.tray_stones = (1..=n).map(|i| format!("s{i}")).collect();
+        assert!(fact.describe().ends_with(ending));
+    }
+    for (tray, has_paper) in [(&paper[0], true), (&ordinary[0], false)] {
+        let report = tray.report().unwrap();
+        let doc = serde_json::to_value(&report).unwrap();
+        let bytes = serde_json::to_vec(&report).unwrap();
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(), doc);
+        for key in ["sheets", "sheet_facts", "under_sheet"] {
+            assert_eq!(doc.get(key).is_some(), has_paper);
+        }
+        let whole = serde_json::to_value(tray).unwrap();
+        assert_eq!(whole["stones"].as_array().unwrap().len(), tray.stones.len());
+    }
+}
+
+#[test]
+fn a_partial_sheet_lift_can_leave_an_unresolved_stone_on_the_tray() {
+    let trays = Replay::open(recording("trays-sheet-partial-synthetic")).unwrap().trays().unwrap();
+    let tr = &trays[0];
+    assert!(tr.check().is_empty());
+    let unresolved = tr.stones.iter().find(|s| s.world_id.is_none()).unwrap();
+    let open = unresolved.open.as_ref().unwrap();
+    assert!(open.world_id.is_none());
+    assert_eq!(open.candidates[0].kind, "unseen");
+    let mut invalid = tr.clone();
+    invalid.stones.iter_mut().find(|s| s.id == unresolved.id).unwrap().under_sheet = true;
+    assert!(invalid.check().iter().any(|c| c == "C6"));
+}
+
+#[test]
+fn covered_stones_must_stay_in_place_to_establish_a_partial_lift() {
+    for absent in [false, true] {
+        let mut core = InterpreterCore::new();
+        for line in Replay::open(recording("trays-sheet-partial-synthetic")).unwrap().lines() {
+            let Line::Frame(mut f) = line.unwrap() else { continue };
+            if f.g > 26 {
+                break;
+            }
+            if f.g == 20 {
+                let w = f.world.as_mut().unwrap();
+                if absent {
+                    w.stones.retain(|s| !matches!(s.id, 3 | 4));
+                } else {
+                    for s in w.stones.iter_mut().filter(|s| matches!(s.id, 3 | 4)) {
+                        s.solid.as_mut().unwrap().pos[0] += 0.4;
+                    }
+                }
+            }
+            core.feed(*f);
+        }
+        core.end();
+        assert_eq!(core.trays()[0].leaving.unwrap().g, 20);
+    }
+}
+
+#[test]
+fn visible_stones_preserve_a_partial_bounded_board() {
+    use pdigger_factory_sdk::models::StoneMode;
+    let mut c = InterpreterCore::new();
+    assert!(c.set_tray_bounds(Some([0., 0., 0., 1.])).is_err());
+    assert!(c.set_tray_bounds(Some([0., f64::NAN, 5., 1.])).is_err());
+    assert!(c.set_tray_bounds(None).is_ok());
+    for case in ["anchored", "missing", "moved", "gap", "unbounded"] {
+        let mut core = InterpreterCore::new();
+        if case != "unbounded" {
+            core.set_tray_bounds(Some([0., 0., 1920., 1080.])).unwrap();
+        }
+        for line in Replay::open(recording("trays-sheet-partial-synthetic")).unwrap().lines() {
+            let Line::Frame(mut f) = line.unwrap() else { continue };
+            if f.g > 31 {
+                break;
+            }
+            if f.g == 19 && case == "gap" {
+                continue;
+            }
+            let w = f.world.as_mut().unwrap();
+            for s in w.stones.iter_mut().filter(|s| matches!(s.id, 3 | 4)) {
+                s.under_sheet = false;
+                s.detected = true;
+                s.mode = StoneMode::Seen;
+                if f.g == 20 && s.id == 4 {
+                    if case == "missing" {
+                        s.detected = false;
+                        s.mode = StoneMode::Kept;
+                    }
+                    if case == "moved" {
+                        s.solid.as_mut().unwrap().pos[0] += 0.4;
+                    }
+                }
+            }
+            if f.g == 14 {
+                w.events[0].ids = Some(vec![1, 2]);
+            }
+            core.feed(*f);
+        }
+        core.end();
+        let g = core.trays()[0].leaving.unwrap().g;
+        if case == "anchored" { assert!(g > 26) } else { assert_eq!(g, 20, "{case}") }
+    }
+}
+
+#[test]
+fn bounded_arrival_keeps_the_delete_and_reveals_cover() {
+    use pdigger_factory_sdk::models::StoneMode;
+    let mut core = InterpreterCore::new();
+    core.set_tray_bounds(Some([0., 0., 100., 100.])).unwrap();
+    let mut facts = Vec::new();
+    let mut deleted = Vec::new();
+    for line in Replay::open(recording(SYNTH)).unwrap().lines() {
+        let Line::Frame(mut f) = line.unwrap() else { continue };
+        let g = f.g;
+        if g > 16 {
+            break;
+        }
+        let w = f.world.as_mut().unwrap();
+        w.stones.truncate(2);
+        for s in &mut w.stones {
+            s.outline = vec![vec![1., 1.], vec![9., 1.], vec![9., 9.]];
+            s.mode = StoneMode::Seen;
+            s.detected = true;
+        }
+        w.events.clear();
+        if g < 4 {
+            let mut old = w.stones[0].clone();
+            old.id = 99;
+            old.detected = false;
+            old.mode = StoneMode::Kept;
+            old.outline = vec![vec![110., 0.], vec![120., 0.], vec![120., 10.]];
+            w.stones.push(old);
+        }
+        if g == 4 || g == 16 {
+            let (id, why) = if g == 4 { (99, "stranded") } else { (9999, "sheet") };
+            w.events.push(WorldEvent {
+                kind: EventKind::Delete,
+                id: Some(id),
+                why: Some(why.into()),
+                ..WorldEvent::default()
+            });
+        }
+        if (11..14).contains(&g) {
+            w.stones[0].under_sheet = true;
+        }
+        w.stats.stones = w.stones.len() as i64;
+        w.stats.confirmed = w.stats.stones;
+        let u = core.feed(*f);
+        facts.extend(u.tray_facts);
+        deleted.extend(u.events.iter().filter(|e| e.kind == EventKind::Delete).filter_map(|e| e.stone_id));
+    }
+    assert_eq!(deleted, [99, 9999]);
+    assert_eq!(facts[0].g, 4);
+    assert_eq!(facts[1].code.as_deref(), Some("sheet_laid"));
+    assert_eq!(facts[2].code.as_deref(), Some("sheet_lifted"));
+}

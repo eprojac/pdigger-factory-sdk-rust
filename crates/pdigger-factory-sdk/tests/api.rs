@@ -391,7 +391,7 @@ async fn the_client_sends_its_headers_and_options() {
     let request = fake.requests().pop().unwrap();
     assert_eq!(request.header("x-test"), Some("1"));
     assert_eq!(request.header("authorization"), Some("Bearer secret"));
-    assert_eq!(request.header("user-agent"), Some("pdigger-factory-sdk-rust/1.0.1 tests/1"));
+    assert_eq!(request.header("user-agent"), Some("pdigger-factory-sdk-rust/1.1.0 tests/1"));
     assert_eq!(request.timeout, Some(Duration::from_secs(2)));
     fake.fail("getHealth", Fault::status(503, "busy"));
     assert_eq!(factory.api().get_health().await.unwrap_err().status, Some(503));

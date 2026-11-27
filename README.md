@@ -13,7 +13,7 @@ Advanced mode gives you the events, frames and tracking evidence behind each rep
 The SDK requires Rust 1.88 or later and uses Tokio. Add these dependencies to your application.
 
 ```sh
-cargo add --git https://github.com/eprojac/pdigger-factory-sdk-rust --tag v1.0.1 pdigger-factory-sdk
+cargo add --git https://github.com/eprojac/pdigger-factory-sdk-rust --branch main pdigger-factory-sdk
 cargo add tokio --features macros,rt-multi-thread
 cargo add futures
 ```
@@ -161,7 +161,7 @@ loopback HTTP server. [Testing guide](docs/testing.md).
 Install the egui viewer with Rust 1.95 or later.
 
 ```sh
-cargo install --locked --git https://github.com/eprojac/pdigger-factory-sdk-rust --tag v1.0.1 pdigger-factory-viz
+cargo install --locked --git https://github.com/eprojac/pdigger-factory-sdk-rust --branch main pdigger-factory-viz
 pdigger-factory-viewer fixtures/recordings/dry1-0018-0153.ndjson.gz
 ```
 

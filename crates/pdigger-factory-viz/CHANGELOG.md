@@ -3,7 +3,18 @@
 This SDK follows [semantic versioning](https://semver.org/). The release workflow uses the matching version section
 as its release notes.
 
-## Unreleased
+## 1.1.0 - Unreleased
+
+### Added
+
+- Tray reports record sheet actions and the IDs still covered at departure. `InterpreterCore::set_tray_bounds`
+  accepts the native image rectangle used to recognize a stationary board during a partial lift.
+
+### Source compatibility
+
+Exhaustive matches on `EventKind` and `TrayFactKind` need a `Sheet` arm. Code that constructs records such as
+`WorldEvent`, `StoneView`, `TrayFact` and `TrayReport` with struct literals must supply their new fields or use
+struct update syntax where a default is available. Exhaustive struct patterns can add `..`.
 
 ### Fixed
 
